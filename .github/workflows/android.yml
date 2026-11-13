@@ -57,7 +57,9 @@ jobs:
 
       - name: 读取版本号
         id: version
-        run: echo "value=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' package.json | head -1)" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: 重命名产物
         run: cp android/app/build/outputs/apk/debug/app-debug.apk sxlb-writer.apk
