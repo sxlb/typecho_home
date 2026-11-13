@@ -1,9 +1,23 @@
 import './ui.css';
 import { call, uploadImage, getSettings, saveSettings, isConfigured, DEFAULT_SETTINGS } from './api.js';
-import { initEditor, getEditorValue, destroyEditor } from './editor.js';
+import { initEditor, getEditorValue, setEditorValue, destroyEditor } from './editor.js';
+import {
+  newDraftId,
+  readDraft,
+  writeDraft,
+  removeDraft,
+  listDrafts,
+  pushHistory,
+  readHistory,
+  migrateLegacyDraft,
+} from './local.js';
 import { App } from '@capacitor/app';
 
 const $ = (selector) => document.querySelector(selector);
+
+const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0';
+const RELEASE_API = 'https://api.github.com/repos/sxlb/typecho_home/releases/tags/latest';
+const DOWNLOAD_URL = 'https://github.com/sxlb/typecho_home/releases/latest/download/sxlb-writer.apk';
 
 const el = {
   views: {
@@ -14,6 +28,8 @@ const el = {
   listLoading: $('#list-loading'),
   listEmpty: $('#list-empty'),
   listItems: $('#list-items'),
+  listSearch: $('#list-search'),
+  listFilters: $('#list-filters'),
   title: $('#post-title'),
   editorStatus: $('#editor-status'),
   sheet: $('#sheet'),
@@ -25,6 +41,14 @@ const el = {
   reprint: $('#publish-reprint'),
   created: $('#publish-created'),
   slug: $('#publish-slug'),
+  historySheet: $('#history-sheet'),
+  historyMask: $('#history-mask'),
+  historyList: $('#history-list'),
+  itemSheet: $('#item-sheet'),
+  itemMask: $('#item-mask'),
+  itemTitle: $('#item-sheet-title'),
+  itemActions: $('#item-actions'),
+  appVersion: $('#app-version'),
   toast: $('#toast'),
   settings: {
     server: $('#set-server'),
@@ -36,6 +60,7 @@ const el = {
 const state = {
   view: 'list',
   cid: 0,
+  draftKey: '',
   status: 'draft',
   dirty: false,
   metasLoaded: false,
@@ -43,6 +68,11 @@ const state = {
   selectedMids: new Set(),
   autosaveTimer: null,
   toastTimer: null,
+  posts: [],
+  filter: 'all',
+  query: '',
+  update: null,
+  item: null,
 };
 
 // ─── 通用 ────────────────────────────────────────────────────────────────
@@ -81,24 +111,38 @@ function formatDate(timestamp) {
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
-function localKey(cid = state.cid) {
-  return `sxlb.local.${cid || 'new'}`;
+function formatDateTime(timestamp) {
+  const date = new Date(timestamp);
+  const pad = (value) => String(value).padStart(2, '0');
+
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function readLocal(cid) {
-  try {
-    return JSON.parse(localStorage.getItem(localKey(cid)) || 'null');
-  } catch {
-    return null;
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // 退回 execCommand
+    }
   }
-}
 
-function writeLocal(data) {
-  localStorage.setItem(localKey(), JSON.stringify({ ...data, updatedAt: Date.now() }));
-}
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
 
-function clearLocal(cid = state.cid) {
-  localStorage.removeItem(localKey(cid));
+  try {
+    document.execCommand('copy');
+  } catch {
+    // 忽略，调用方按返回值判断
+  }
+
+  area.remove();
+  return true;
 }
 
 // ─── 列表 ────────────────────────────────────────────────────────────────
@@ -109,54 +153,229 @@ async function loadPosts() {
     return;
   }
 
-  el.listLoading.hidden = false;
-  el.listEmpty.hidden = true;
-  el.listItems.innerHTML = '';
+  el.listLoading.hidden = true;
 
   try {
-    const data = await call('posts', { query: { page: 1, size: 30 } });
-    renderPosts(data.items);
+    const data = await call('posts', { query: { page: 1, size: 50 } });
+    state.posts = data.items || [];
+    renderList();
   } catch (error) {
     toast(error.message);
+    state.posts = [];
+    renderList();
+    el.listLoading.hidden = false;
     el.listLoading.textContent = '加载失败，下拉重试';
-  } finally {
-    el.listLoading.hidden = el.listItems.childElementCount > 0;
   }
 }
 
-function renderPosts(items) {
-  el.listItems.innerHTML = '';
-  el.listEmpty.hidden = items.length > 0;
+function localDraftItems() {
+  return listDrafts().filter((draft) => String(draft.id).startsWith('draft-'));
+}
 
-  if (!items.length) {
-    el.listLoading.hidden = true;
+function renderList() {
+  const keyword = state.query.trim().toLowerCase();
+  const { filter } = state;
+
+  const serverItems = state.posts.filter((item) => {
+    if (filter === 'local') {
+      return false;
+    }
+
+    if (filter === 'publish' && item.status !== 'publish') {
+      return false;
+    }
+
+    if (filter === 'draft' && item.status !== 'draft') {
+      return false;
+    }
+
+    if (filter === 'scheduled' && !item.scheduled) {
+      return false;
+    }
+
+    return !keyword || String(item.title || '').toLowerCase().includes(keyword);
+  });
+
+  const showLocal = filter === 'all' || filter === 'local' || filter === 'draft';
+  const drafts = showLocal
+    ? localDraftItems().filter(
+        (draft) => !keyword || String(draft.title || '').toLowerCase().includes(keyword),
+      )
+    : [];
+
+  el.listItems.innerHTML = '';
+  el.listEmpty.hidden = drafts.length + serverItems.length > 0;
+
+  if (!drafts.length && !serverItems.length) {
+    el.listEmpty.hidden = false;
     return;
   }
 
   const fragment = document.createDocumentFragment();
 
-  for (const item of items) {
-    const button = document.createElement('button');
-    button.className = 'post-item';
-    button.type = 'button';
+  drafts.forEach((draft) => {
+    fragment.appendChild(
+      createItem({
+        key: draft.id,
+        title: draft.title || '未命名草稿',
+        badge: '<span class="badge local">本地草稿</span>',
+        time: formatDate((draft.updatedAt || Date.now()) / 1000),
+        item: { local: true, id: draft.id, title: draft.title, text: draft.text },
+      }),
+    );
+  });
 
+  serverItems.forEach((item) => {
     const badge = item.scheduled
       ? '<span class="badge scheduled">定时</span>'
       : item.status === 'draft'
         ? '<span class="badge draft">草稿</span>'
         : '<span class="badge">已发布</span>';
 
-    button.innerHTML = `
-      <div class="post-title"></div>
-      <div class="post-meta">${badge}<span>${formatDate(item.created)}</span></div>
-    `;
-    button.querySelector('.post-title').textContent = item.title || '未命名文档';
-    button.addEventListener('click', () => openPost(item.cid));
-
-    fragment.appendChild(button);
-  }
+    fragment.appendChild(
+      createItem({
+        key: `post-${item.cid}`,
+        title: item.title || '未命名文档',
+        badge,
+        time: formatDate(item.created),
+        item: { local: false, ...item },
+      }),
+    );
+  });
 
   el.listItems.appendChild(fragment);
+  el.listLoading.hidden = true;
+}
+
+function createItem({ title, badge, time, item }) {
+  const wrap = document.createElement('div');
+  wrap.className = 'post-item';
+
+  const main = document.createElement('button');
+  main.type = 'button';
+  main.className = 'post-main';
+  main.innerHTML = '<div class="post-title"></div><div class="post-meta"></div>';
+  main.querySelector('.post-title').textContent = title;
+  main.querySelector('.post-meta').innerHTML = `${badge}<span>${time}</span>`;
+  main.addEventListener('click', () => {
+    if (item.local) {
+      openLocalDraft(item.id);
+    } else {
+      openPost(item.cid);
+    }
+  });
+
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'post-more';
+  more.setAttribute('aria-label', '更多操作');
+  more.textContent = '⋯';
+  more.addEventListener('click', (event) => {
+    event.stopPropagation();
+    openItemSheet(item);
+  });
+
+  wrap.appendChild(main);
+  wrap.appendChild(more);
+
+  return wrap;
+}
+
+// ─── 文章操作抽屉 ────────────────────────────────────────────────────────
+
+function addItemAction(label, handler, danger = false) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'item-action' + (danger ? ' danger' : '');
+  button.textContent = label;
+  button.addEventListener('click', handler);
+  el.itemActions.appendChild(button);
+
+  return button;
+}
+
+function openItemSheet(item) {
+  state.item = item;
+  el.itemTitle.textContent = item.title || '未命名文档';
+  el.itemActions.innerHTML = '';
+
+  if (item.local) {
+    addItemAction('继续编辑', () => {
+      closeItemSheet();
+      openLocalDraft(item.id);
+    });
+
+    addItemAction('复制正文', async () => {
+      await copyText(item.text || '');
+      closeItemSheet();
+      toast('正文已复制');
+    });
+
+    let armed = false;
+    const button = addItemAction(
+      '删除本地草稿',
+      () => {
+        if (!armed) {
+          armed = true;
+          button.textContent = '再次点击确认删除';
+          return;
+        }
+
+        removeDraft(item.id);
+        closeItemSheet();
+        renderList();
+        toast('已删除本地草稿');
+      },
+      true,
+    );
+  } else {
+    addItemAction('打开', () => {
+      closeItemSheet();
+      openPost(item.cid);
+    });
+
+    addItemAction(item.slug ? '复制文章链接' : '复制文章 ID', async () => {
+      const settings = getSettings();
+      const text = item.slug
+        ? `${settings.server.replace(/\/+$/, '')}/${item.slug}`
+        : String(item.cid);
+      await copyText(text);
+      closeItemSheet();
+      toast('已复制');
+    });
+
+    let armed = false;
+    const button = addItemAction(
+      item.status === 'draft' ? '删除草稿' : '删除文章',
+      async () => {
+        if (!armed) {
+          armed = true;
+          button.textContent = '再次点击确认删除';
+          return;
+        }
+
+        button.disabled = true;
+
+        try {
+          await call('delete', { method: 'POST', body: { cid: item.cid } });
+          removeDraft(String(item.cid));
+          closeItemSheet();
+          await loadPosts();
+          toast('已删除');
+        } catch (error) {
+          button.disabled = false;
+          toast(error.message);
+        }
+      },
+      true,
+    );
+  }
+
+  showSheet(el.itemSheet, el.itemMask);
+}
+
+function closeItemSheet() {
+  hideSheet(el.itemSheet, el.itemMask);
 }
 
 // ─── 编辑 ────────────────────────────────────────────────────────────────
@@ -219,8 +438,9 @@ function renderCategoryChips() {
   }
 }
 
-function startEditor({ cid, title, text, meta }) {
+function startEditor({ cid, draftKey, title, text, meta }) {
   state.cid = cid;
+  state.draftKey = draftKey;
   state.dirty = false;
   el.title.value = title || '';
   fillSheet(meta || {});
@@ -244,6 +464,7 @@ function scheduleAutosave() {
   clearTimeout(state.autosaveTimer);
   state.autosaveTimer = setTimeout(() => {
     persistLocal();
+    maybeSnapshot();
     const now = new Date();
     el.editorStatus.textContent = `已存本地 ${String(now.getHours()).padStart(2, '0')}:${String(
       now.getMinutes(),
@@ -252,7 +473,12 @@ function scheduleAutosave() {
 }
 
 function persistLocal() {
-  writeLocal({
+  if (!state.draftKey) {
+    return;
+  }
+
+  writeDraft(state.draftKey, {
+    cid: state.cid,
     title: el.title.value,
     text: getEditorValue(),
     mid: [...state.selectedMids],
@@ -265,27 +491,73 @@ function persistLocal() {
   });
 }
 
+/**
+ * 记录历史版本：自动保存时每分钟最多一版，离开编辑器时强制记一版
+ *
+ * @param {boolean} force 是否忽略节流
+ */
+function maybeSnapshot(force = false) {
+  if (!state.draftKey) {
+    return;
+  }
+
+  const text = getEditorValue();
+
+  if (!String(text).trim()) {
+    return;
+  }
+
+  const latest = readHistory(state.draftKey)[0];
+
+  if (!force && latest && Date.now() - latest.at < 60000) {
+    return;
+  }
+
+  pushHistory(state.draftKey, { title: el.title.value, text });
+}
+
 function openNew() {
-  const local = readLocal(0);
+  if (!isConfigured()) {
+    openSettings();
+    return;
+  }
 
   state.status = 'draft';
 
   startEditor({
     cid: 0,
-    title: local?.title || '',
-    text: local?.text || '',
-    meta: local || {},
+    draftKey: newDraftId(),
+    title: '',
+    text: '',
+    meta: {},
   });
+}
 
-  if (local) {
-    toast('已恢复本地草稿');
+function openLocalDraft(id) {
+  const draft = readDraft(id);
+
+  if (!draft) {
+    toast('草稿已不存在');
+    renderList();
+    return;
   }
+
+  state.status = 'draft';
+  state.selectedMids = new Set(draft.mid || []);
+
+  startEditor({
+    cid: 0,
+    draftKey: id,
+    title: draft.title || '',
+    text: draft.text || '',
+    meta: { ...draft, mid: [...state.selectedMids] },
+  });
 }
 
 async function openPost(cid) {
   try {
     const post = await call('post', { query: { cid } });
-    const local = readLocal(cid);
+    const local = readDraft(String(cid));
     const useLocal = local && local.updatedAt > post.modified * 1000;
     const source = useLocal ? local : {};
 
@@ -294,6 +566,7 @@ async function openPost(cid) {
 
     startEditor({
       cid: post.cid,
+      draftKey: String(post.cid),
       title: source.title ?? post.title,
       text: source.text ?? post.text,
       meta: {
@@ -315,56 +588,98 @@ async function openPost(cid) {
 }
 
 function backToList() {
-  // 输入后 1.2 秒内返回时防抖计时器会被清掉，这里补一次落盘，避免丢内容
-  if (state.dirty) {
+  // 输入后 1.2 秒内返回时防抖计时器会被清掉，这里补一次落盘与快照，避免丢内容
+  if (state.draftKey) {
     persistLocal();
+    maybeSnapshot(true);
   }
 
   destroyEditor();
   clearTimeout(state.autosaveTimer);
   state.dirty = false;
+  state.draftKey = '';
   show('list');
+  renderList();
   loadPosts();
+}
+
+// ─── 抽屉通用 ────────────────────────────────────────────────────────────
+
+function showSheet(sheet, mask) {
+  sheet.hidden = false;
+  mask.hidden = false;
+  requestAnimationFrame(() => {
+    sheet.classList.add('open');
+    mask.classList.add('open');
+  });
+}
+
+function hideSheet(sheet, mask) {
+  sheet.classList.remove('open');
+  mask.classList.remove('open');
+  setTimeout(() => {
+    sheet.hidden = true;
+    mask.hidden = true;
+  }, 260);
 }
 
 // ─── 发布抽屉 ────────────────────────────────────────────────────────────
 
 function openSheet() {
   ensureMetas();
-  el.sheet.hidden = false;
-  el.sheetMask.hidden = false;
-  requestAnimationFrame(() => {
-    el.sheet.classList.add('open');
-    el.sheetMask.classList.add('open');
-  });
+  showSheet(el.sheet, el.sheetMask);
 }
 
 function closeSheet() {
-  el.sheet.classList.remove('open');
-  el.sheetMask.classList.remove('open');
-  setTimeout(() => {
-    el.sheet.hidden = true;
-    el.sheetMask.hidden = true;
-  }, 260);
+  hideSheet(el.sheet, el.sheetMask);
+}
+
+function firstImageUrl(text) {
+  const markdown = String(text).match(/!\[[^\]]*\]\(([^)\s]+)/);
+
+  if (markdown) {
+    return markdown[1];
+  }
+
+  const html = String(text).match(/<img[^>]+src=["']([^"']+)["']/i);
+
+  return html ? html[1] : '';
 }
 
 async function submit(isDraft) {
   const title = el.title.value.trim();
+  const text = getEditorValue();
 
   if (!title) {
     toast('请先填写标题');
     return;
   }
 
-  if (!getEditorValue().trim()) {
+  if (!text.trim()) {
     toast('正文不能为空');
     return;
+  }
+
+  if (!isDraft && state.selectedMids.size === 0) {
+    toast('请选择至少一个分类');
+    if (el.sheet.hidden) {
+      openSheet();
+    }
+    return;
+  }
+
+  // 没填缩略图时，自动取正文第一张图
+  if (!el.thumb.value.trim()) {
+    const cover = firstImageUrl(text);
+    if (cover) {
+      el.thumb.value = cover;
+    }
   }
 
   const body = {
     cid: state.cid,
     title,
-    text: getEditorValue(),
+    text,
     slug: el.slug.value.trim(),
     isDraft,
     mid: [...state.selectedMids],
@@ -381,19 +696,24 @@ async function submit(isDraft) {
   button.disabled = true;
   button.textContent = '提交中…';
 
+  const previousKey = state.draftKey;
+
   try {
     const result = await call('save', { method: 'POST', body });
-    const previousCid = state.cid;
+
+    pushHistory(String(result.cid), { title, text });
 
     state.cid = result.cid;
     state.status = result.status;
     state.dirty = false;
-    clearLocal(0);
-    clearLocal(previousCid);
-    clearLocal(result.cid);
+
+    removeDraft(previousKey);
+    removeDraft(String(previousKey));
+    removeDraft(String(result.cid));
 
     closeSheet();
     destroyEditor();
+    state.draftKey = '';
     show('list');
     await loadPosts();
 
@@ -412,14 +732,89 @@ async function submit(isDraft) {
   }
 }
 
-// ─── 设置 ────────────────────────────────────────────────────────────────
+// ─── 历史版本 ────────────────────────────────────────────────────────────
+
+function openHistory() {
+  const list = readHistory(state.draftKey);
+  el.historyList.innerHTML = '';
+
+  if (!list.length) {
+    const empty = document.createElement('p');
+    empty.className = 'history-empty';
+    empty.textContent = '还没有历史版本，保存或离开编辑器时会自动记录';
+    el.historyList.appendChild(empty);
+  }
+
+  list.forEach((version, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'history-item';
+
+    const info = document.createElement('div');
+    info.className = 'history-info';
+
+    const time = document.createElement('div');
+    time.className = 'history-time';
+    time.textContent = `${formatDateTime(version.at)} · ${countWords(version.text)} 字`;
+
+    const preview = document.createElement('div');
+    preview.className = 'history-preview';
+    preview.textContent = String(version.text || '')
+      .replace(/[#>*`\-\n]+/g, ' ')
+      .trim()
+      .slice(0, 48);
+
+    info.appendChild(time);
+    info.appendChild(preview);
+    button.appendChild(info);
+
+    if (index === 0) {
+      time.textContent += '（最近）';
+    }
+
+    button.addEventListener('click', () => {
+      restoreVersion(version);
+    });
+
+    el.historyList.appendChild(button);
+  });
+
+  showSheet(el.historySheet, el.historyMask);
+}
+
+function countWords(text) {
+  return String(text || '').replace(/\s/g, '').length;
+}
+
+function restoreVersion(version) {
+  maybeSnapshot(true);
+
+  // 原地覆盖，不重建编辑器，避免 Vditor 销毁/重建时的内部状态报错
+  el.title.value = version.title || el.title.value;
+  setEditorValue(version.text);
+
+  state.dirty = true;
+  persistLocal();
+  hideSheet(el.historySheet, el.historyMask);
+  toast('已恢复该版本，记得保存');
+}
+
+// ─── 设置与更新 ──────────────────────────────────────────────────────────
 
 function openSettings() {
   const settings = getSettings();
   el.settings.server.value = settings.server || DEFAULT_SETTINGS.server;
   el.settings.token.value = settings.token || '';
   el.settings.secret.value = settings.secret || '';
+  renderVersion();
   show('settings');
+}
+
+function renderVersion() {
+  const latest = state.update?.version;
+  el.appVersion.textContent = latest
+    ? `当前 v${APP_VERSION}，最新 v${latest}`
+    : `当前版本 v${APP_VERSION}`;
 }
 
 async function testConnection() {
@@ -446,6 +841,66 @@ function saveSettingsFromForm() {
   });
 }
 
+function compareVersion(a, b) {
+  const left = String(a).split('.').map((part) => Number(part) || 0);
+  const right = String(b).split('.').map((part) => Number(part) || 0);
+
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    const x = left[i] || 0;
+    const y = right[i] || 0;
+
+    if (x !== y) {
+      return x > y ? 1 : -1;
+    }
+  }
+
+  return 0;
+}
+
+async function checkUpdate(manual = false) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch(RELEASE_API, {
+      headers: { Accept: 'application/vnd.github+json' },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error('release');
+    }
+
+    const data = await response.json();
+    const match = String(data.body || '').match(/版本[：:]\s*v?([\d.]+)/);
+
+    if (!match) {
+      throw new Error('version');
+    }
+
+    state.update = { version: match[1] };
+    renderVersion();
+
+    if (compareVersion(match[1], APP_VERSION) > 0) {
+      if (manual) {
+        await copyText(DOWNLOAD_URL);
+        toast(`发现新版本 v${match[1]}，下载链接已复制`);
+      } else {
+        toast(`发现新版本 v${match[1]}，设置页可查看`);
+      }
+    } else if (manual) {
+      toast('当前已是最新版本');
+    }
+  } catch {
+    if (manual) {
+      toast('检查更新失败，请稍后再试');
+    }
+  } finally {
+    clearTimeout(timer);
+    localStorage.setItem('sxlb.updateCheck', String(Date.now()));
+  }
+}
+
 // ─── 事件绑定 ────────────────────────────────────────────────────────────
 
 function bind() {
@@ -460,6 +915,31 @@ function bind() {
     isConfigured() ? loadPosts() : show('settings');
   });
 
+  $('#btn-history').addEventListener('click', openHistory);
+  $('#history-close').addEventListener('click', () => hideSheet(el.historySheet, el.historyMask));
+  el.historyMask.addEventListener('click', () => hideSheet(el.historySheet, el.historyMask));
+  $('#item-close').addEventListener('click', closeItemSheet);
+  el.itemMask.addEventListener('click', closeItemSheet);
+
+  el.listSearch.addEventListener('input', () => {
+    state.query = el.listSearch.value;
+    renderList();
+  });
+
+  el.listFilters.addEventListener('click', (event) => {
+    const button = event.target.closest('.chip');
+
+    if (!button) {
+      return;
+    }
+
+    state.filter = button.dataset.filter;
+    [...el.listFilters.children].forEach((chip) => {
+      chip.classList.toggle('active', chip === button);
+    });
+    renderList();
+  });
+
   el.title.addEventListener('input', () => {
     state.dirty = true;
     scheduleAutosave();
@@ -471,6 +951,7 @@ function bind() {
     toast('设置已保存');
     loadPosts();
   });
+  $('#btn-check-update').addEventListener('click', () => checkUpdate(true));
 
   $('#sheet-close').addEventListener('click', closeSheet);
   el.sheetMask.addEventListener('click', closeSheet);
@@ -514,7 +995,11 @@ function bind() {
   // 安卓物理返回键
   if (window.Capacitor?.isNativePlatform?.()) {
     App.addListener('backButton', () => {
-      if (!el.sheet.hidden) {
+      if (!el.itemSheet.hidden) {
+        closeItemSheet();
+      } else if (!el.historySheet.hidden) {
+        hideSheet(el.historySheet, el.historyMask);
+      } else if (!el.sheet.hidden) {
         closeSheet();
       } else if (state.view === 'editor') {
         backToList();
@@ -527,10 +1012,16 @@ function bind() {
   }
 }
 
+migrateLegacyDraft();
 bind();
 
 if (isConfigured()) {
   loadPosts();
+
+  const lastCheck = Number(localStorage.getItem('sxlb.updateCheck') || 0);
+  if (Date.now() - lastCheck > 24 * 3600 * 1000) {
+    checkUpdate(false);
+  }
 } else {
   openSettings();
 }

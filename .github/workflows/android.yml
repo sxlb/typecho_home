@@ -55,6 +55,10 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
+      - name: 读取版本号
+        id: version
+        run: echo "value=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' package.json | head -1)" >> "$GITHUB_OUTPUT"
+
       - name: 重命名产物
         run: cp android/app/build/outputs/apk/debug/app-debug.apk sxlb-writer.apk
 
@@ -65,6 +69,7 @@ jobs:
           tag_name: latest
           name: 最新构建
           body: |
+            版本：${{ steps.version.outputs.value }}
             提交：${{ github.sha }}
             构建记录：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           files: sxlb-writer.apk

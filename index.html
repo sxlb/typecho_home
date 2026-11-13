@@ -33,6 +33,22 @@
             </button>
           </div>
         </header>
+        <div class="list-tools">
+          <input
+            class="search-input"
+            id="list-search"
+            type="search"
+            placeholder="搜索标题"
+            autocomplete="off"
+          />
+          <div class="chips filters" id="list-filters">
+            <button class="chip active" type="button" data-filter="all">全部</button>
+            <button class="chip" type="button" data-filter="publish">已发布</button>
+            <button class="chip" type="button" data-filter="draft">草稿</button>
+            <button class="chip" type="button" data-filter="scheduled">定时</button>
+            <button class="chip" type="button" data-filter="local">本地</button>
+          </div>
+        </div>
         <main class="list-body" id="list-body">
           <div class="list-loading" id="list-loading">加载中…</div>
           <div class="empty" id="list-empty" hidden>
@@ -54,6 +70,12 @@
           <button class="text-btn" id="btn-back">返回</button>
           <span class="editor-status" id="editor-status"></span>
           <div class="topbar-actions">
+            <button class="icon-btn" id="btn-history" aria-label="历史版本">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="8.5" />
+                <path d="M12 7.5V12l3 1.8" />
+              </svg>
+            </button>
             <button class="text-btn" id="btn-save">保存</button>
             <button class="text-btn accent" id="btn-publish">发布</button>
           </div>
@@ -87,6 +109,10 @@
           <div class="settings-actions">
             <button class="btn ghost" id="btn-test">测试连接</button>
             <button class="btn primary" id="btn-save-settings">保存设置</button>
+          </div>
+          <div class="update-row">
+            <span class="update-version" id="app-version">当前版本</span>
+            <button class="btn ghost small" id="btn-check-update">检查更新</button>
           </div>
           <p class="settings-hint">
             Token 与 Secret 在博客后台「插件 → SxlbPublisher 设置」中查看。密钥只保存在本机。
@@ -149,6 +175,36 @@
         <button class="btn ghost" id="btn-draft">存草稿</button>
         <button class="btn primary" id="btn-submit">发布</button>
       </div>
+    </aside>
+
+    <!-- 历史版本抽屉 -->
+    <div class="sheet-mask" id="history-mask" hidden></div>
+    <aside class="sheet" id="history-sheet" hidden aria-hidden="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <span>历史版本</span>
+        <button class="icon-btn" id="history-close" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+      <div class="sheet-body" id="history-list"></div>
+    </aside>
+
+    <!-- 文章操作抽屉 -->
+    <div class="sheet-mask" id="item-mask" hidden></div>
+    <aside class="sheet" id="item-sheet" hidden aria-hidden="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <span id="item-sheet-title">操作</span>
+        <button class="icon-btn" id="item-close" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+      <div class="sheet-body" id="item-actions"></div>
     </aside>
 
     <!-- 主题元素输入弹窗 -->
