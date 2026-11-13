@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f6f5f2" />
+    <title>写作</title>
+  </head>
+  <body>
+    <div id="app">
+      <!-- 文章列表 -->
+      <section id="view-list" class="view">
+        <header class="topbar">
+          <div class="brand">
+            <span class="brand-mark">凉</span>
+            <h1>写作</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="icon-btn" id="btn-refresh" aria-label="刷新">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 11a8 8 0 1 0-2.3 6.3" />
+                <path d="M20 5v6h-6" />
+              </svg>
+            </button>
+            <button class="icon-btn" id="btn-settings" aria-label="设置">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="3.2" />
+                <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+              </svg>
+            </button>
+          </div>
+        </header>
+        <main class="list-body" id="list-body">
+          <div class="list-loading" id="list-loading">加载中…</div>
+          <div class="empty" id="list-empty" hidden>
+            <p class="empty-title">还没有文章</p>
+            <p class="empty-desc">点右下角开始写第一篇</p>
+          </div>
+          <div id="list-items"></div>
+        </main>
+        <button class="fab" id="btn-new" aria-label="新建文章">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+      </section>
+
+      <!-- 编辑器 -->
+      <section id="view-editor" class="view" hidden>
+        <header class="topbar editor-topbar">
+          <button class="text-btn" id="btn-back">返回</button>
+          <span class="editor-status" id="editor-status"></span>
+          <div class="topbar-actions">
+            <button class="text-btn" id="btn-save">保存</button>
+            <button class="text-btn accent" id="btn-publish">发布</button>
+          </div>
+        </header>
+        <input id="post-title" class="title-input" type="text" placeholder="标题" autocomplete="off" />
+        <div class="editor-wrap">
+          <div id="editor"></div>
+        </div>
+      </section>
+
+      <!-- 设置 -->
+      <section id="view-settings" class="view" hidden>
+        <header class="topbar">
+          <button class="text-btn" id="btn-settings-back">返回</button>
+          <span class="editor-status">设置</span>
+          <div class="topbar-actions"></div>
+        </header>
+        <main class="settings-body">
+          <label class="field">
+            <span class="field-label">服务器地址</span>
+            <input id="set-server" type="url" placeholder="https://blog.sxlb.xyz" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span class="field-label">Token</span>
+            <input id="set-token" type="text" placeholder="X-Sxlb-Token" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span class="field-label">Secret</span>
+            <input id="set-secret" type="text" placeholder="HMAC 密钥" autocomplete="off" />
+          </label>
+          <div class="settings-actions">
+            <button class="btn ghost" id="btn-test">测试连接</button>
+            <button class="btn primary" id="btn-save-settings">保存设置</button>
+          </div>
+          <p class="settings-hint">
+            Token 与 Secret 在博客后台「插件 → SxlbPublisher 设置」中查看。密钥只保存在本机。
+          </p>
+        </main>
+      </section>
+    </div>
+
+    <!-- 发布抽屉 -->
+    <div class="sheet-mask" id="sheet-mask" hidden></div>
+    <aside class="sheet" id="sheet" hidden aria-hidden="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <span>发布设置</span>
+        <button class="icon-btn" id="sheet-close" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <div class="field">
+          <span class="field-label">分类</span>
+          <div class="chips" id="category-chips"></div>
+        </div>
+        <label class="field">
+          <span class="field-label">标签</span>
+          <input id="publish-tags" type="text" placeholder="用逗号分隔" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span class="field-label">摘要</span>
+          <textarea id="publish-summary" rows="3" placeholder="留空则由 AI 自动生成"></textarea>
+        </label>
+        <div class="field">
+          <span class="field-label">缩略图</span>
+          <div class="thumb-row">
+            <input id="publish-thumb" type="url" placeholder="图片地址" autocomplete="off" />
+            <button class="btn ghost small" id="btn-thumb-upload">上传</button>
+          </div>
+        </div>
+        <div class="field-row">
+          <label class="field half">
+            <span class="field-label">类型</span>
+            <select id="publish-reprint">
+              <option value="standard">原创</option>
+              <option value="reprint">转载</option>
+            </select>
+          </label>
+          <label class="field half">
+            <span class="field-label">定时发布</span>
+            <input id="publish-created" type="datetime-local" />
+          </label>
+        </div>
+        <label class="field">
+          <span class="field-label">固定链接</span>
+          <input id="publish-slug" type="text" placeholder="留空自动生成" autocomplete="off" />
+        </label>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn ghost" id="btn-draft">存草稿</button>
+        <button class="btn primary" id="btn-submit">发布</button>
+      </div>
+    </aside>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

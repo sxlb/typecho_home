@@ -1,0 +1,8 @@
+{
+  "appId": "xyz.sxlb.writer",
+  "appName": "凉薄写作",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
