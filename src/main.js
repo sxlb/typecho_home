@@ -315,8 +315,14 @@ async function openPost(cid) {
 }
 
 function backToList() {
+  // 输入后 1.2 秒内返回时防抖计时器会被清掉，这里补一次落盘，避免丢内容
+  if (state.dirty) {
+    persistLocal();
+  }
+
   destroyEditor();
   clearTimeout(state.autosaveTimer);
+  state.dirty = false;
   show('list');
   loadPosts();
 }

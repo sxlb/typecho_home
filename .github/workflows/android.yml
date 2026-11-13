@@ -4,12 +4,10 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - 'src/**'
-      - 'index.html'
-      - 'package.json'
-      - 'capacitor.config.json'
-      - '.github/workflows/android.yml'
+    tags: ['v*']
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -32,6 +30,13 @@ jobs:
         with:
           packages: 'platforms;android-35 build-tools;35.0.0'
 
+      # 复用同一个调试签名，否则每次构建签名不同，手机上无法覆盖安装
+      - name: 缓存签名密钥
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
       - name: 安装依赖
         run: npm ci
 
@@ -44,15 +49,24 @@ jobs:
       - name: 同步资源
         run: npx cap sync android
 
-      - name: 打包 Debug APK
+      - name: 打包 APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: 上传 APK
-        uses: actions/upload-artifact@v4
+      - name: 重命名产物
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk sxlb-writer.apk
+
+      # 直接以 .apk 附件发布，下载后即可安装，不需要解压
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: sxlb-writer-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 30
+          tag_name: latest
+          name: 最新构建
+          body: |
+            提交：${{ github.sha }}
+            构建记录：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          files: sxlb-writer.apk
+          make_latest: true
+          overwrite_files: true

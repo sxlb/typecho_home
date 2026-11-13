@@ -73,13 +73,19 @@ async function send(url, options, path, rawBody) {
   }
 
   const headers = { ...options.headers, ...(await authHeaders(settings.secret, path, rawBody)) };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45000);
 
   let response;
 
   try {
-    response = await fetch(url, { ...options, headers });
-  } catch {
-    throw new Error('网络请求失败，请检查服务器地址与网络');
+    response = await fetch(url, { ...options, headers, signal: controller.signal });
+  } catch (error) {
+    throw new Error(
+      error.name === 'AbortError' ? '请求超时，请检查网络后重试' : '网络请求失败，请检查服务器地址与网络',
+    );
+  } finally {
+    clearTimeout(timer);
   }
 
   const text = await response.text();
