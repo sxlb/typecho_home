@@ -56,6 +56,7 @@
             <p class="empty-desc">点右下角开始写第一篇</p>
           </div>
           <div id="list-items"></div>
+          <button class="list-more" id="list-more" type="button" hidden>加载更多</button>
         </main>
         <button class="fab" id="btn-new" aria-label="新建文章">
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -113,6 +114,15 @@
               <option value="wysiwyg">所见即所得（更像 Word，表格可视化编辑）</option>
               <option value="sv">分屏预览（左边源码，右边效果）</option>
               <option value="code">纯代码（只看 Markdown 源码，点「看成品」预览）</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">写作字号</span>
+            <select id="set-editor-size">
+              <option value="small">小（14px，一屏字多）</option>
+              <option value="normal">标准（15.5px）</option>
+              <option value="large">大（17px，久看不累）</option>
+              <option value="xlarge">特大（19px，长辈友好）</option>
             </select>
           </label>
           <label class="field">

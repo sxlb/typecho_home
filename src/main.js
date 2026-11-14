@@ -28,6 +28,7 @@ const el = {
   listLoading: $('#list-loading'),
   listEmpty: $('#list-empty'),
   listItems: $('#list-items'),
+  listMore: $('#list-more'),
   listSearch: $('#list-search'),
   listFilters: $('#list-filters'),
   title: $('#post-title'),
@@ -64,6 +65,7 @@ const el = {
     token: $('#set-token'),
     secret: $('#set-secret'),
     mode: $('#set-editor-mode'),
+    size: $('#set-editor-size'),
     theme: $('#set-theme'),
   },
 };
@@ -84,6 +86,9 @@ const state = {
   posts: [],
   filter: 'all',
   query: '',
+  page: 1,
+  hasMore: false,
+  listLoading: false,
   update: null,
   item: null,
   allowWarnings: false,
@@ -136,6 +141,19 @@ function applyTheme(pref = getSettings().theme) {
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute('content', theme === 'dark' ? '#161514' : '#f6f5f2');
+}
+
+const EDITOR_FONT_SIZES = ['small', 'normal', 'large', 'xlarge'];
+
+/**
+ * 写作字号：写到 <html data-editor-size>，CSS 变量统一控制正文与源码区
+ *
+ * @param {'small'|'normal'|'large'|'xlarge'} [value]
+ */
+function applyFontSize(value = getSettings().editorFontSize) {
+  document.documentElement.dataset.editorSize = EDITOR_FONT_SIZES.includes(value)
+    ? value
+    : DEFAULT_SETTINGS.editorFontSize;
 }
 
 function formatDate(timestamp) {
@@ -191,24 +209,76 @@ async function copyText(text) {
 
 // ─── 列表 ────────────────────────────────────────────────────────────────
 
-async function loadPosts() {
+const PAGE_SIZE = 50;
+
+/**
+ * 拉取文章列表
+ *
+ * 列表按页加载：首次 reset，点「加载更多」时按当前页号继续拉，
+ * 服务端返回 total 时以 total 判断是否还有下一页，否则用「本页是否满 50 条」兜底。
+ *
+ * @param {{reset?: boolean}} [options]
+ */
+async function loadPosts({ reset = true } = {}) {
   if (!isConfigured()) {
     openSettings();
     return;
   }
 
-  el.listLoading.hidden = true;
+  if (state.listLoading) {
+    return;
+  }
+
+  if (reset) {
+    state.page = 1;
+    state.hasMore = true;
+  }
+
+  if (!state.hasMore) {
+    return;
+  }
+
+  state.listLoading = true;
+  updateListMore();
+
+  if (reset) {
+    el.listLoading.hidden = false;
+    el.listLoading.textContent = '加载中…';
+  }
 
   try {
-    const data = await call('posts', { query: { page: 1, size: 50 } });
-    state.posts = data.items || [];
+    const data = await call('posts', { query: { page: state.page, size: PAGE_SIZE } });
+    const items = data.items || [];
+    const exists = new Set(reset ? [] : state.posts.map((item) => item.cid));
+    const merged = reset ? [] : [...state.posts];
+
+    items.forEach((item) => {
+      if (!exists.has(item.cid)) {
+        merged.push(item);
+      }
+    });
+
+    state.posts = merged;
+    state.hasMore =
+      typeof data.total === 'number' ? merged.length < data.total : items.length >= PAGE_SIZE;
+
     renderList();
+    el.listLoading.hidden = true;
   } catch (error) {
     toast(error.message);
-    state.posts = [];
-    renderList();
-    el.listLoading.hidden = false;
-    el.listLoading.textContent = '加载失败，下拉重试';
+
+    if (reset) {
+      state.posts = [];
+      renderList();
+      el.listLoading.hidden = false;
+      el.listLoading.textContent = '加载失败，下拉重试';
+    }
+
+    // 保留重试机会
+    state.hasMore = true;
+  } finally {
+    state.listLoading = false;
+    updateListMore();
   }
 }
 
@@ -219,6 +289,8 @@ function localDraftItems() {
 function renderList() {
   const keyword = state.query.trim().toLowerCase();
   const { filter } = state;
+
+  updateListMore();
 
   const serverItems = state.posts.filter((item) => {
     if (filter === 'local') {
@@ -289,6 +361,17 @@ function renderList() {
 
   el.listItems.appendChild(fragment);
   el.listLoading.hidden = true;
+}
+
+/** 「加载更多」只在远端还有下一页且当前不是本地草稿筛选时出现 */
+function updateListMore() {
+  if (!el.listMore) {
+    return;
+  }
+
+  el.listMore.hidden = state.filter === 'local' || !state.hasMore;
+  el.listMore.textContent = state.listLoading ? '加载中…' : '加载更多';
+  el.listMore.disabled = state.listLoading;
 }
 
 function createItem({ title, badge, time, item }) {
@@ -1110,6 +1193,7 @@ function openSettings() {
   el.settings.token.value = settings.token || '';
   el.settings.secret.value = settings.secret || '';
   el.settings.mode.value = settings.editorMode || DEFAULT_SETTINGS.editorMode;
+  el.settings.size.value = settings.editorFontSize || DEFAULT_SETTINGS.editorFontSize;
   el.settings.theme.value = settings.theme || DEFAULT_SETTINGS.theme;
   renderVersion();
   show('settings');
@@ -1144,9 +1228,11 @@ function saveSettingsFromForm() {
     token: el.settings.token.value.trim(),
     secret: el.settings.secret.value.trim(),
     editorMode: el.settings.mode.value || DEFAULT_SETTINGS.editorMode,
+    editorFontSize: el.settings.size.value || DEFAULT_SETTINGS.editorFontSize,
     theme: el.settings.theme.value || DEFAULT_SETTINGS.theme,
   });
   applyTheme();
+  applyFontSize();
 }
 
 function compareVersion(a, b) {
@@ -1212,7 +1298,7 @@ async function checkUpdate(manual = false) {
 // ─── 事件绑定 ────────────────────────────────────────────────────────────
 
 function bind() {
-  $('#btn-refresh').addEventListener('click', loadPosts);
+  $('#btn-refresh').addEventListener('click', () => loadPosts());
   $('#btn-settings').addEventListener('click', openSettings);
   $('#btn-new').addEventListener('click', openNew);
   $('#btn-back').addEventListener('click', backToList);
@@ -1238,6 +1324,11 @@ function bind() {
   el.listSearch.addEventListener('input', () => {
     state.query = el.listSearch.value;
     renderList();
+  });
+
+  el.listMore.addEventListener('click', () => {
+    state.page += 1;
+    loadPosts({ reset: false });
   });
 
   el.listFilters.addEventListener('click', (event) => {
@@ -1291,6 +1382,7 @@ function bind() {
 
   // 外观切换即时预览，点「保存设置」或返回时一并落盘
   el.settings.theme.addEventListener('change', () => applyTheme(el.settings.theme.value));
+  el.settings.size.addEventListener('change', () => applyFontSize(el.settings.size.value));
 
   // 发布检查清单：展开/收起，字段改动后自动重算
   el.check.toggle.addEventListener('click', () => setCheckOpen(!checkOpen));
@@ -1377,6 +1469,7 @@ function bind() {
 }
 
 applyTheme();
+applyFontSize();
 
 // 跟随系统时，系统在深浅色之间切换要立即生效
 themeQuery?.addEventListener?.('change', () => {

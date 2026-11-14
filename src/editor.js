@@ -362,6 +362,43 @@ async function insertCollapse() {
   insert(`[collapse status="${value.status}" title="${value.title}"]${value.content}[/collapse]`);
 }
 
+/**
+ * 查找替换：手机上没有 Ctrl+F，长文改错字全靠它
+ *
+ * 全部替换用 split/join 实现，避免用户输入的正则元字符被当成表达式。
+ */
+async function openFindReplace() {
+  if (!vditor) {
+    return;
+  }
+
+  const value = await openDialog({
+    title: '查找替换',
+    confirmText: '全部替换',
+    fields: [
+      { key: 'find', label: '查找内容', placeholder: '要查找的文字' },
+      { key: 'replace', label: '替换为', placeholder: '留空表示删除' },
+    ],
+  });
+
+  if (!value || !value.find) {
+    return;
+  }
+
+  const current = vditor.getValue();
+  const parts = current.split(value.find);
+  const count = parts.length - 1;
+
+  if (!count) {
+    errorHandler?.('没有找到匹配的文字');
+    return;
+  }
+
+  vditor.setValue(parts.join(value.replace), true);
+  notifyChange();
+  errorHandler?.(`已替换 ${count} 处`);
+}
+
 /* ─── 主题元素面板（替代 Vditor 子菜单，避免被工具栏裁剪） ── */
 
 const THEME_ITEMS = [
@@ -1014,6 +1051,9 @@ const CODE_ICON =
 const EYE_ICON =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" style="fill:none;stroke-width:1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12s3.6-6 9.5-6 9.5 6 9.5 6-3.6 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/></svg>';
 
+const FIND_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" style="fill:none;stroke-width:1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.3"/><path d="M15.8 15.8L21 21"/></svg>';
+
 /* ─── 片段库（常用开头、声明、SEO 描述等，只存本机） ────── */
 
 let snippetSheetReady = false;
@@ -1191,6 +1231,7 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onMo
       { name: 'camera', tip: '拍照', icon: CAMERA_ICON, click: openCamera },
       { name: 'theme', tip: '主题元素', icon: THEME_ICON, click: openThemeSheet },
       { name: 'snippets', tip: '片段库', icon: SNIPPET_ICON, click: openSnippetSheet },
+      { name: 'findreplace', tip: '查找替换', icon: FIND_ICON, click: openFindReplace },
       // 内置编辑模式切换：即时渲染 / 所见即所得 / 分屏预览，切换时保留正文
       { name: 'edit-mode', tip: '编辑模式' },
       // 纯代码：只显示 Markdown 源码，右侧「看成品」按需整屏预览

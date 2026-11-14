@@ -10,8 +10,10 @@ export const DEFAULT_SETTINGS = {
   server: 'https://blog.sxlb.xyz',
   token: '',
   secret: '',
-  // 编辑器模式：ir 即时渲染 / wysiwyg 所见即所得 / sv 分屏预览
+  // 编辑器模式：ir 即时渲染 / wysiwyg 所见即所得 / sv 分屏预览 / code 纯代码
   editorMode: 'ir',
+  // 写作字号：small / normal / large / xlarge
+  editorFontSize: 'normal',
   // 外观：auto 跟随系统 / light 浅色 / dark 深色
   theme: 'auto',
 };
