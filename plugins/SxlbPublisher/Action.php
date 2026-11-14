@@ -475,6 +475,21 @@ class Action extends Widget implements ActionInterface
                 $this->requirePost($sub);
                 $this->ok(Media::delete(Db::get(), $this->intParam('cid')));
                 break;
+            case 'metaSave':
+                $this->requirePost($sub);
+
+                $values = $this->param('values', []);
+
+                if (!is_array($values)) {
+                    $this->fail('values 必须是对象');
+                }
+
+                $this->ok(Meta::save(Db::get(), $this->intParam('mid'), $values));
+                break;
+            case 'metaDelete':
+                $this->requirePost($sub);
+                $this->ok(Meta::delete(Db::get(), $this->intParam('mid')));
+                break;
             default:
                 $this->fail('未知管理接口: ' . $sub, 404);
         }

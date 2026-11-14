@@ -21,12 +21,12 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package SxlbPublisher
  * @author 生性凉薄
- * @version 2.1.0
+ * @version 2.2.0
  * @link https://blog.sxlb.xyz
  */
 class Plugin implements PluginInterface
 {
-    public const VERSION = '2.1.0';
+    public const VERSION = '2.2.0';
 
     private const ROUTE = 'sxlb_writer';
     private const ROUTE_SUB = 'sxlb_writer_sub';

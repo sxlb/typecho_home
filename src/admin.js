@@ -5,7 +5,7 @@
  * 这里只负责渲染与交互，鉴权、开关判断都在服务端完成。
  */
 
-import { callAdmin } from './api.js';
+import { callAdmin, uploadImage } from './api.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -272,6 +272,11 @@ function renderContent() {
       title: '媒体库',
       description: `共 ${overview.media || 0} 个文件`,
     },
+    {
+      key: 'metas',
+      title: '分类与标签',
+      description: `${overview.categories || 0} 个分类 · ${overview.tags || 0} 个标签`,
+    },
   ];
 
   el.content.innerHTML = '';
@@ -320,18 +325,34 @@ const COMMENT_STATUS = {
 };
 
 function openTool(kind) {
-  const status = kind === 'comments'
-    ? (Number(state.overview?.pendingComments || 0) > 0 ? 'waiting' : 'all')
-    : '';
+  let status = '';
 
-  state.tool = { kind, status, page: 1, items: [], total: 0, busy: false };
+  if (kind === 'comments') {
+    status = Number(state.overview?.pendingComments || 0) > 0 ? 'waiting' : 'all';
+  } else if (kind === 'metas') {
+    status = 'category';
+  }
+
+  state.tool = {
+    kind,
+    status,
+    page: 1,
+    items: [],
+    total: 0,
+    busy: false,
+    edit: null,
+    categories: [],
+    tags: [],
+  };
   state.panel = null;
 
   el.config.hidden = true;
   el.error.hidden = true;
   el.overview.hidden = true;
   el.tools.hidden = false;
-  el.toolsTitle.textContent = kind === 'comments' ? '评论管理' : '媒体库';
+  el.toolsTitle.textContent = kind === 'comments'
+    ? '评论管理'
+    : (kind === 'metas' ? '分类与标签' : '媒体库');
   el.toolsList.innerHTML = '';
   el.toolsMore.hidden = true;
   renderToolFilters();
@@ -341,34 +362,106 @@ function openTool(kind) {
 }
 
 function renderToolFilters() {
+  const tool = state.tool;
   el.toolsFilters.innerHTML = '';
 
-  if (state.tool?.kind !== 'comments') {
+  if (!tool) {
     el.toolsFilters.hidden = true;
     return;
   }
 
-  el.toolsFilters.hidden = false;
+  if (tool.kind === 'comments') {
+    el.toolsFilters.hidden = false;
 
-  COMMENT_FILTERS.forEach((filter) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `chip${state.tool.status === filter.key ? ' active' : ''}`;
-    button.textContent = filter.label;
-    button.addEventListener('click', () => {
-      if (state.tool.status === filter.key) {
-        return;
-      }
+    COMMENT_FILTERS.forEach((filter) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `chip${tool.status === filter.key ? ' active' : ''}`;
+      button.textContent = filter.label;
+      button.addEventListener('click', () => {
+        if (tool.status === filter.key) {
+          return;
+        }
 
-      state.tool.status = filter.key;
-      state.tool.page = 1;
-      state.tool.items = [];
-      renderToolFilters();
-      loadToolPage(true);
+        tool.status = filter.key;
+        tool.page = 1;
+        tool.items = [];
+        renderToolFilters();
+        loadToolPage(true);
+      });
+
+      el.toolsFilters.appendChild(button);
     });
 
-    el.toolsFilters.appendChild(button);
+    return;
+  }
+
+  if (tool.kind === 'metas') {
+    el.toolsFilters.hidden = false;
+
+    [{ key: 'category', label: '分类' }, { key: 'tag', label: '标签' }].forEach((tab) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `chip${tool.status === tab.key ? ' active' : ''}`;
+      button.textContent = tab.label;
+      button.addEventListener('click', () => {
+        if (tool.status === tab.key) {
+          return;
+        }
+
+        tool.status = tab.key;
+        tool.edit = null;
+        tool.items = [];
+        renderToolFilters();
+        loadToolPage(true);
+      });
+
+      el.toolsFilters.appendChild(button);
+    });
+
+    const create = toolButton(tool.status === 'category' ? '新建分类' : '新建标签', 'primary', () => {
+      tool.edit = { mid: 0, name: '', slug: '', description: '', order: 0, parent: 0 };
+      renderToolItems();
+    });
+    el.toolsFilters.appendChild(create);
+
+    return;
+  }
+
+  // 媒体库：直接上传，cid = 0 表示不关联文章
+  el.toolsFilters.hidden = false;
+
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.hidden = true;
+
+  const button = toolButton('上传文件', 'primary', () => input.click());
+
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+
+    if (!file) {
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = '上传中…';
+
+    try {
+      await uploadImage(file, 0);
+      toast('上传成功');
+      await reloadTool();
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = '上传文件';
+      input.value = '';
+    }
   });
+
+  el.toolsFilters.append(button, input);
 }
 
 async function loadToolPage(reset) {
@@ -383,17 +476,26 @@ async function loadToolPage(reset) {
   el.toolsMore.textContent = '加载中…';
 
   try {
-    const query = { page: tool.page, size: tool.kind === 'comments' ? 20 : 24 };
+    if (tool.kind === 'metas') {
+      const data = await callAdmin('metas');
+      tool.categories = Array.isArray(data?.categories) ? data.categories : [];
+      tool.tags = Array.isArray(data?.tags) ? data.tags : [];
+      tool.items = tool.status === 'category' ? tool.categories : tool.tags;
+      tool.total = tool.items.length;
+    } else {
+      const query = { page: tool.page, size: tool.kind === 'comments' ? 20 : 24 };
 
-    if (tool.kind === 'comments' && tool.status !== 'all') {
-      query.status = tool.status;
+      if (tool.kind === 'comments' && tool.status !== 'all') {
+        query.status = tool.status;
+      }
+
+      const data = await callAdmin(tool.kind === 'comments' ? 'comments' : 'media', { query });
+      const items = Array.isArray(data?.items) ? data.items : [];
+
+      tool.items = reset ? items : tool.items.concat(items);
+      tool.total = Number(data?.total || 0);
     }
 
-    const data = await callAdmin(tool.kind === 'comments' ? 'comments' : 'media', { query });
-    const items = Array.isArray(data?.items) ? data.items : [];
-
-    tool.items = reset ? items : tool.items.concat(items);
-    tool.total = Number(data?.total || 0);
     renderToolItems();
   } catch (error) {
     toast(error.message);
@@ -425,20 +527,233 @@ function renderToolItems() {
 
   el.toolsList.innerHTML = '';
 
-  // 重新渲染前把已展开的回复框状态清空，避免残留
+  if (tool.kind === 'metas' && tool.edit) {
+    el.toolsList.appendChild(renderMetaForm());
+  }
+
   if (!tool.items.length) {
     const empty = document.createElement('p');
     empty.className = 'plugin-empty';
-    empty.textContent = tool.kind === 'comments' ? '没有符合条件的评论' : '还没有上传过文件';
+    empty.textContent = tool.kind === 'comments'
+      ? '没有符合条件的评论'
+      : (tool.kind === 'metas' ? '还没有分类或标签' : '还没有上传过文件');
     el.toolsList.appendChild(empty);
     return;
   }
 
   if (tool.kind === 'comments') {
     tool.items.forEach((item) => el.toolsList.appendChild(renderComment(item)));
+  } else if (tool.kind === 'metas') {
+    tool.items.forEach((item) => el.toolsList.appendChild(renderMeta(item)));
   } else {
     tool.items.forEach((item) => el.toolsList.appendChild(renderMedia(item)));
   }
+}
+
+/**
+ * 分类 / 标签的编辑表单（新建与编辑共用）
+ */
+function renderMetaForm() {
+  const tool = state.tool;
+  const draft = tool.edit;
+  const isCategory = tool.status === 'category';
+  const row = document.createElement('div');
+  row.className = 'tool-item meta-form';
+
+  const title = document.createElement('div');
+  title.className = 'tool-title';
+  title.textContent = draft.mid > 0
+    ? (isCategory ? '编辑分类' : '编辑标签')
+    : (isCategory ? '新建分类' : '新建标签');
+
+  const nameField = fieldInput('名称', draft.name || '');
+  const slugField = fieldInput('Slug', draft.slug || '', '留空自动生成');
+  const orderField = fieldInput('排序', String(draft.order || 0), '', 'number');
+
+  row.append(title, nameField.wrap, slugField.wrap, orderField.wrap);
+
+  let descriptionField = null;
+
+  if (isCategory) {
+    descriptionField = fieldInput('描述', draft.description || '', '', 'textarea');
+    row.appendChild(descriptionField.wrap);
+    row.appendChild(parentSelect(draft));
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'tool-actions';
+
+  const save = toolButton('保存', 'primary', async () => {
+    const values = {
+      name: nameField.input.value.trim(),
+      slug: slugField.input.value.trim(),
+      order: Number(orderField.input.value || 0),
+      description: descriptionField ? descriptionField.input.value : '',
+      parent: isCategory ? Number(row.querySelector('[data-parent]')?.value || 0) : 0,
+    };
+
+    if (!values.name) {
+      toast('名称不能为空');
+      return;
+    }
+
+    if (!draft.mid) {
+      values.type = tool.status;
+    }
+
+    save.disabled = true;
+    save.textContent = '保存中…';
+
+    try {
+      await callAdmin('metaSave', { method: 'POST', body: { mid: draft.mid, values } });
+      tool.edit = null;
+      toast('已保存');
+      await reloadTool();
+    } catch (error) {
+      toast(error.message);
+      save.disabled = false;
+      save.textContent = '保存';
+    }
+  });
+
+  const cancel = toolButton('取消', 'ghost', () => {
+    tool.edit = null;
+    renderToolItems();
+  });
+
+  actions.append(save, cancel);
+  row.appendChild(actions);
+
+  return row;
+}
+
+function fieldInput(label, value, hint = '', type = 'text') {
+  const wrap = document.createElement('div');
+  wrap.className = 'field';
+
+  const text = document.createElement('label');
+  text.className = 'field-label';
+  text.textContent = label;
+
+  let input;
+
+  if (type === 'textarea') {
+    input = document.createElement('textarea');
+    input.rows = 2;
+  } else {
+    input = document.createElement('input');
+    input.type = type;
+  }
+
+  input.value = value;
+  wrap.append(text, input);
+
+  if (hint) {
+    const tip = document.createElement('span');
+    tip.className = 'field-desc';
+    tip.textContent = hint;
+    wrap.appendChild(tip);
+  }
+
+  return { wrap, input };
+}
+
+function parentSelect(draft) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field';
+
+  const label = document.createElement('label');
+  label.className = 'field-label';
+  label.textContent = '父分类';
+
+  const select = document.createElement('select');
+  select.dataset.parent = '1';
+
+  const top = document.createElement('option');
+  top.value = '0';
+  top.textContent = '顶级分类';
+  select.appendChild(top);
+
+  const tool = state.tool;
+  tool.categories.forEach((item) => {
+    if (item.mid === draft.mid) {
+      return;
+    }
+
+    const option = document.createElement('option');
+    option.value = String(item.mid);
+    option.textContent = item.name;
+    option.selected = Number(draft.parent) === item.mid;
+    select.appendChild(option);
+  });
+
+  wrap.append(label, select);
+  return wrap;
+}
+
+function renderMeta(item) {
+  const tool = state.tool;
+  const isCategory = tool.status === 'category';
+  const row = document.createElement('div');
+  row.className = 'tool-item';
+
+  const head = document.createElement('div');
+  head.className = 'tool-head';
+
+  const name = document.createElement('span');
+  name.className = 'tool-author';
+  name.textContent = item.name;
+
+  const badge = document.createElement('span');
+  badge.className = 'badge on';
+  badge.textContent = `${item.count || 0} 篇`;
+
+  const slug = document.createElement('span');
+  slug.className = 'tool-time';
+  slug.textContent = `/${item.slug}`;
+
+  head.append(name, badge, slug);
+
+  const meta = document.createElement('div');
+  meta.className = 'tool-meta';
+
+  if (isCategory) {
+    const parent = tool.categories.find((category) => category.mid === Number(item.parent));
+    meta.textContent = [
+      parent ? `父分类：${parent.name}` : '顶级分类',
+      item.description || '',
+    ].filter(Boolean).join(' · ');
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'tool-actions';
+
+  actions.appendChild(toolButton('编辑', 'ghost', () => {
+    tool.edit = {
+      mid: item.mid,
+      name: item.name,
+      slug: item.slug,
+      description: item.description || '',
+      order: item.order || 0,
+      parent: item.parent || 0,
+    };
+    renderToolItems();
+  }));
+
+  const remove = toolButton('删除', 'ghost');
+  confirmThen(remove, '确认删除', () => {
+    runToolAction('metaDelete', { mid: item.mid }, isCategory ? '分类已删除' : '标签已删除');
+  });
+  actions.appendChild(remove);
+
+  row.append(head);
+
+  if (meta.textContent) {
+    row.appendChild(meta);
+  }
+
+  row.appendChild(actions);
+  return row;
 }
 
 function renderComment(item) {

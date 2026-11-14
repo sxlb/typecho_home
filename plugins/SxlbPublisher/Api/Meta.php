@@ -83,7 +83,7 @@ class Meta
             return ['mid' => (int) $exists['mid'], 'name' => $exists['name'], 'slug' => $exists['slug']];
         }
 
-        $slug = self::uniqueSlug($db, $name);
+        $slug = self::uniqueSlug($db, Common::slugName($name));
         $db->query($db->insert('table.metas')->rows([
             'name' => $name,
             'slug' => $slug,
@@ -97,18 +97,149 @@ class Meta
         return ['mid' => (int) $db->lastInsertId(), 'name' => $name, 'slug' => $slug];
     }
 
-    private static function uniqueSlug(Db $db, string $name): string
+    /**
+     * 新建或更新分类 / 标签
+     *
+     * mid = 0 表示新建，type 仅新建时生效；更新沿用数据库中的类型。
+     *
+     * @param array $data name / slug / description / order / parent / type
+     */
+    public static function save(Db $db, int $mid, array $data): array
     {
-        $slug = Common::slugName($name);
+        $name = trim((string) ($data['name'] ?? ''));
 
-        $exists = $db->fetchRow(
-            $db->select('mid')->from('table.metas')->where('slug = ?', $slug)->limit(1)
-        );
-
-        if ($exists) {
-            $slug .= '-' . substr(md5($name), 0, 6);
+        if ($name === '') {
+            throw new \RuntimeException('名称不能为空');
         }
 
-        return $slug;
+        $existing = null;
+
+        if ($mid > 0) {
+            $existing = $db->fetchRow(
+                $db->select('mid', 'type', 'count')->from('table.metas')
+                    ->where('mid = ?', $mid)->limit(1)
+            );
+
+            if (!$existing) {
+                throw new \RuntimeException('分类或标签不存在');
+            }
+
+            $type = (string) $existing['type'];
+        } else {
+            $type = (string) ($data['type'] ?? 'tag');
+
+            if (!in_array($type, ['category', 'tag'], true)) {
+                throw new \RuntimeException('type 只能是 category 或 tag');
+            }
+        }
+
+        $slug = trim((string) ($data['slug'] ?? ''));
+
+        if ($slug === '') {
+            $slug = Common::slugName($name);
+        }
+
+        $slug = self::uniqueSlug($db, $slug, $mid);
+
+        $parent = 0;
+
+        if ($type === 'category') {
+            $parent = max(0, (int) ($data['parent'] ?? 0));
+
+            if ($parent === $mid) {
+                throw new \RuntimeException('不能把自己设为父分类');
+            }
+
+            if ($parent > 0) {
+                $exists = $db->fetchRow(
+                    $db->select('mid')->from('table.metas')
+                        ->where('mid = ?', $parent)->where('type = ?', 'category')->limit(1)
+                );
+
+                if (!$exists) {
+                    throw new \RuntimeException('父分类不存在');
+                }
+            }
+        }
+
+        $rows = [
+            'name' => $name,
+            'slug' => $slug,
+            'description' => (string) ($data['description'] ?? ''),
+            'order' => max(0, (int) ($data['order'] ?? 0)),
+            'parent' => $parent,
+        ];
+
+        if ($mid > 0) {
+            $db->query($db->update('table.metas')->rows($rows)->where('mid = ?', $mid));
+
+            return [
+                'mid' => $mid,
+                'type' => $type,
+                'count' => (int) $existing['count'],
+            ] + $rows;
+        }
+
+        $rows['type'] = $type;
+        $rows['count'] = 0;
+        $db->query($db->insert('table.metas')->rows($rows));
+
+        return ['mid' => (int) $db->lastInsertId()] + $rows;
+    }
+
+    /**
+     * 删除分类或标签
+     *
+     * 与后台一致：清理关联关系；删除分类时把子分类上移到父分类。
+     */
+    public static function delete(Db $db, int $mid): array
+    {
+        $row = $db->fetchRow(
+            $db->select('mid', 'type', 'parent')->from('table.metas')
+                ->where('mid = ?', $mid)->limit(1)
+        );
+
+        if (!$row) {
+            throw new \RuntimeException('分类或标签不存在');
+        }
+
+        $type = (string) $row['type'];
+        $db->query($db->delete('table.metas')->where('mid = ?', $mid));
+        $db->query($db->delete('table.relationships')->where('mid = ?', $mid));
+
+        if ($type === 'category') {
+            $db->query(
+                $db->update('table.metas')
+                    ->rows(['parent' => (int) $row['parent']])
+                    ->where('parent = ?', $mid)
+            );
+        }
+
+        return ['mid' => $mid, 'type' => $type, 'deleted' => true];
+    }
+
+    private static function uniqueSlug(Db $db, string $slug, int $excludeMid = 0): string
+    {
+        $base = $slug !== '' ? $slug : 'item';
+        $candidate = $base;
+        $index = 1;
+
+        while (self::slugExists($db, $candidate, $excludeMid)) {
+            $candidate = $base . '-' . $index;
+            $index++;
+        }
+
+        return $candidate;
+    }
+
+    private static function slugExists(Db $db, string $slug, int $excludeMid): bool
+    {
+        $query = $db->select('mid')->from('table.metas')->where('slug = ?', $slug);
+
+        if ($excludeMid > 0) {
+            $query->where('mid <> ?', $excludeMid);
+        }
+
+        return (bool) $db->fetchRow($query->limit(1));
     }
 }

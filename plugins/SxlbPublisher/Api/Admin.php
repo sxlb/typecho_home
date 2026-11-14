@@ -46,6 +46,8 @@ class Admin
             'comments' => self::countComments($db),
             'pendingComments' => self::countComments($db, 'waiting'),
             'media' => self::countContents($db, 'attachment'),
+            'categories' => self::countMetas($db, 'category'),
+            'tags' => self::countMetas($db, 'tag'),
             'site' => (string) Options::alloc()->title,
             'time' => time(),
         ];
@@ -1464,6 +1466,16 @@ class Admin
         }
 
         $row = $db->fetchObject($query);
+
+        return (int) ($row->num ?? 0);
+    }
+
+    private static function countMetas(Db $db, string $type): int
+    {
+        $row = $db->fetchObject(
+            $db->select(['COUNT(table.metas.mid)' => 'num'])->from('table.metas')
+                ->where('type = ?', $type)
+        );
 
         return (int) ($row->num ?? 0);
     }
