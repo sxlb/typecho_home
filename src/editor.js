@@ -88,6 +88,7 @@ function openDialog({ title, confirmText = '插入', fields }) {
       root.onclick = null;
       okBtn.onclick = null;
       cancelBtn.onclick = null;
+      notifyOverlay();
 
       if (dialogResolve === resolve) {
         dialogResolve = null;
@@ -115,6 +116,7 @@ function openDialog({ title, confirmText = '插入', fields }) {
 
     dialogResolve = resolve;
     root.hidden = false;
+    notifyOverlay();
 
     const first = Object.values(inputs)[0];
     if (first) {
@@ -123,7 +125,7 @@ function openDialog({ title, confirmText = '插入', fields }) {
   });
 }
 
-function insert(text) {
+function insert(text, range = null) {
   if (!vditor || !text) {
     return;
   }
@@ -131,7 +133,12 @@ function insert(text) {
   try {
     // 面板/工具栏点击会让编辑器失焦，先恢复焦点与选区
     vditor.focus();
+
+    // 异步场景（图片上传）传回发起时的选区，避免插到用户后来点过的位置
+    restoreRange(range);
+
     vditor.insertValue(text);
+    rememberRange();
   } catch {
     // 选区彻底丢失时 Vditor 会抛 IndexSizeError：内容已插入就跳过，否则追加到末尾
     const current = vditor.getValue();
@@ -486,6 +493,11 @@ let themeGridReady = false;
 // 关闭动画延时器：快速连续开关时取消上一次，避免刚打开的面板被旧定时器隐藏
 let sheetTimer = null;
 
+/** 通知 main.js 重新计算「是否有弹层打开」，用于锁定背景滚动 */
+function notifyOverlay() {
+  window.dispatchEvent(new Event('sxlb:overlay'));
+}
+
 function openSheet(sheetId, maskId) {
   const sheet = document.getElementById(sheetId);
   const mask = document.getElementById(maskId);
@@ -497,6 +509,7 @@ function openSheet(sheetId, maskId) {
   clearTimeout(sheetTimer);
   sheet.hidden = false;
   mask.hidden = false;
+  notifyOverlay();
 
   requestAnimationFrame(() => {
     sheet.classList.add('open');
@@ -519,6 +532,7 @@ function closeSheet(sheetId, maskId) {
   sheetTimer = setTimeout(() => {
     sheet.hidden = true;
     mask.hidden = true;
+    notifyOverlay();
   }, 260);
 
   return true;
@@ -790,6 +804,52 @@ function getEditorRoot() {
 
 let activeTable = null;
 let savedRange = null;
+// 编辑器内最后一次有效选区：上传图片等异步操作完成后据此恢复插入点
+let lastEditorRange = null;
+
+/** 记住当前选区（仅限编辑器内部），返回克隆后的 Range */
+function rememberRange() {
+  const selection = window.getSelection();
+
+  if (!selection || selection.rangeCount === 0) {
+    return null;
+  }
+
+  const range = selection.getRangeAt(0).cloneRange();
+  const root = getEditorRoot();
+
+  if (!root || !root.contains(range.startContainer)) {
+    return null;
+  }
+
+  lastEditorRange = range;
+
+  return range;
+}
+
+/** 把选区还原到编辑器内，失败时返回 false 交给调用方兜底 */
+function restoreRange(range) {
+  if (!range || !range.startContainer || !document.contains(range.startContainer)) {
+    return false;
+  }
+
+  const root = getEditorRoot();
+
+  if (!root || !root.contains(range.startContainer)) {
+    return false;
+  }
+
+  const selection = window.getSelection();
+
+  if (!selection) {
+    return false;
+  }
+
+  selection.removeAllRanges();
+  selection.addRange(range);
+
+  return true;
+}
 
 function liveCell() {
   const selection = window.getSelection();
@@ -813,6 +873,9 @@ function liveCell() {
 
 // 记住光标最后停留的表格和选区：点工具栏/面板按钮时选区会丢，操作前要还原
 document.addEventListener('selectionchange', () => {
+  // 普通正文选区也记下来，图片上传完成后回到这里插入
+  rememberRange();
+
   const cell = liveCell();
 
   if (cell) {
@@ -1320,6 +1383,8 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onMo
     after: () => syncModeUi(mode),
     upload: {
       accept: 'image/*',
+      // 相册多选：粘贴 / 拖拽的图片也走同一个 handler
+      multiple: true,
       handler: (files) => uploadFiles(Array.from(files || [])),
     },
   });
@@ -1332,6 +1397,8 @@ function openCamera() {
   input.type = 'file';
   input.accept = 'image/*';
   input.capture = 'environment';
+  // 桌面端会忽略 capture，允许多选；手机上仍然直接唤起相机
+  input.multiple = true;
 
   input.addEventListener('change', () => {
     if (input.files && input.files.length) {
@@ -1342,9 +1409,14 @@ function openCamera() {
   input.click();
 }
 
-/* ─── 图片上传：进度条 + 失败重试 ───────────────────────── */
+/* ─── 图片上传：进度条 + 失败重试 + 取消 ───────────────── */
 
 const uploadState = { items: [], running: false };
+
+// 上传批次代号：销毁编辑器时递增，旧批次的异步结果据此丢弃，避免销毁后仍往正文插图
+let uploadEpoch = 0;
+// 发起上传时的插入位置：等待期间用户点到别处也不影响最终插入点
+let uploadAnchor = null;
 let uploadHideTimer = null;
 
 function ensureUploadBar() {
@@ -1368,6 +1440,16 @@ function hideUploadBar() {
   document.getElementById('upload-bar')?.remove();
 }
 
+function cancelUploads() {
+  uploadState.items.forEach((item) => {
+    if (item.status === 'pending' || item.status === 'uploading') {
+      item.status = 'cancelled';
+    }
+  });
+
+  renderUploadBar();
+}
+
 function renderUploadBar() {
   if (!uploadState.items.length && !uploadState.running) {
     return;
@@ -1375,6 +1457,8 @@ function renderUploadBar() {
 
   const bar = ensureUploadBar();
   const failed = uploadState.items.filter((item) => item.status === 'failed');
+  const done = uploadState.items.filter((item) => item.status === 'done').length;
+  const cancelled = uploadState.items.some((item) => item.status === 'cancelled');
   const index = uploadState.items.findIndex((item) => item.status === 'uploading');
   const busy = uploadState.running;
 
@@ -1384,21 +1468,37 @@ function renderUploadBar() {
   let text;
 
   if (busy) {
+    const current = index >= 0 ? index + 1 : uploadState.items.length;
     text =
       uploadState.items.length > 1
-        ? `正在上传 ${Math.min(index + 1, uploadState.items.length)}/${uploadState.items.length} 张…`
+        ? `正在上传 ${current}/${uploadState.items.length} 张…`
         : '图片上传中…';
   } else if (failed.length) {
     text = `${failed.length} 张图片上传失败`;
+  } else if (cancelled) {
+    text = '已取消上传';
   } else {
-    text = `${uploadState.items.length} 张图片已插入`;
+    text = `${done} 张图片已插入`;
   }
 
   bar.querySelector('.upload-text').textContent = text;
 
   let act = bar.querySelector('.upload-act');
 
-  if (!busy && failed.length) {
+  if (busy) {
+    if (!act) {
+      act = document.createElement('button');
+      act.type = 'button';
+      act.className = 'upload-act';
+      bar.appendChild(act);
+    }
+
+    act.textContent = '取消';
+    act.onclick = cancelUploads;
+    return;
+  }
+
+  if (failed.length) {
     if (!act) {
       act = document.createElement('button');
       act.type = 'button';
@@ -1417,10 +1517,14 @@ function renderUploadBar() {
 
   act?.remove();
 
-  if (!busy) {
-    clearTimeout(uploadHideTimer);
-    uploadHideTimer = setTimeout(hideUploadBar, 1600);
+  clearTimeout(uploadHideTimer);
+
+  if (cancelled) {
+    uploadHideTimer = setTimeout(hideUploadBar, 900);
+    return;
   }
+
+  uploadHideTimer = setTimeout(hideUploadBar, 1600);
 }
 
 async function runUploadQueue() {
@@ -1428,9 +1532,15 @@ async function runUploadQueue() {
     return;
   }
 
+  const epoch = uploadEpoch;
   uploadState.running = true;
 
   for (const item of uploadState.items) {
+    // 编辑器已销毁或已被新批次接管：旧队列立即停手，结果全部丢弃
+    if (epoch !== uploadEpoch) {
+      return;
+    }
+
     if (item.status !== 'pending') {
       continue;
     }
@@ -1441,10 +1551,30 @@ async function runUploadQueue() {
     try {
       const result = await uploadImage(item.file, currentCid ? currentCid() : 0);
 
-      insert(`\n![${result.name || '图片'}](${result.url})\n`);
+      if (epoch !== uploadEpoch) {
+        return;
+      }
 
+      // 上传期间用户点了取消：结果丢弃，不再插入正文
+      if (item.status === 'cancelled') {
+        renderUploadBar();
+        continue;
+      }
+
+      insert(`\n![${result.name || '图片'}](${result.url})\n`, uploadAnchor);
+      // 光标此时停在刚插入的图片之后，后续图片接着往后排，不会全部挤在同一点
+      uploadAnchor = rememberRange() || uploadAnchor;
       item.status = 'done';
     } catch (error) {
+      if (epoch !== uploadEpoch) {
+        return;
+      }
+
+      if (item.status === 'cancelled') {
+        renderUploadBar();
+        continue;
+      }
+
       item.status = 'failed';
       item.error = error.message || '图片上传失败';
     }
@@ -1452,24 +1582,36 @@ async function runUploadQueue() {
     renderUploadBar();
   }
 
+  if (epoch !== uploadEpoch) {
+    return;
+  }
+
   uploadState.running = false;
 
   const failed = uploadState.items.filter((item) => item.status === 'failed');
+  const done = uploadState.items.filter((item) => item.status === 'done').length;
 
-  if (!failed.length) {
+  if (failed.length) {
+    renderUploadBar();
+    errorHandler?.(`${failed.length} 张图片上传失败，点底部提示条可重试`);
+  } else if (done) {
     // 给成功提示留一拍再清空
     renderUploadBar();
     uploadState.items = [];
   } else {
-    renderUploadBar();
-    errorHandler?.(`${failed.length} 张图片上传失败，点底部提示条可重试`);
+    // 全部取消：直接收起提示条
+    uploadState.items = [];
+    hideUploadBar();
   }
 }
 
 async function uploadFiles(files) {
-  if (!files.length) {
+  if (!files.length || !vditor) {
     return;
   }
+
+  // 入队时记住光标位置；文件选择器关掉后选区可能已丢失，退回最后一次有效位置
+  uploadAnchor = rememberRange() || (lastEditorRange ? lastEditorRange.cloneRange() : null);
 
   files.forEach((file) => {
     uploadState.items.push({ file, status: 'pending' });
@@ -1505,6 +1647,9 @@ export function applyEditorTheme(theme) {
 
 export function destroyEditor() {
   closeEditorSheets();
+  // 递增批次号：仍在等待响应的上传请求回来后直接丢弃结果
+  uploadEpoch += 1;
+  uploadAnchor = null;
   hideUploadBar();
   uploadState.items = [];
   uploadState.running = false;
@@ -1512,6 +1657,7 @@ export function destroyEditor() {
   modeHandler = null;
   activeTable = null;
   savedRange = null;
+  lastEditorRange = null;
 
   if (vditor) {
     vditor.destroy();

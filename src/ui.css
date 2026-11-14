@@ -3,7 +3,8 @@
   --surface: #ffffff;
   --ink: #1b1a18;
   --ink-2: #5c5a55;
-  --ink-3: #98958d;
+  /* 次要文字压到 4.5:1 以上，白底上仍保持层级但不再发灰 */
+  --ink-3: #6f6c65;
   --line: #e7e4de;
   --accent: #1f6f5c;
   --accent-soft: #eaf3ef;
@@ -27,7 +28,7 @@
   --surface: #1f1e1c;
   --ink: #ebe8e2;
   --ink-2: #aaa49b;
-  --ink-3: #7b766c;
+  --ink-3: #8a857b;
   --line: #302e2b;
   --accent: #5cc7a8;
   --accent-soft: rgba(92, 199, 168, 0.14);
@@ -315,7 +316,7 @@ body {
 
 .badge.draft {
   background: #f0eee8;
-  color: #8a857a;
+  color: #67625a;
 }
 
 .badge.scheduled {
@@ -595,6 +596,23 @@ body {
 
 /* ─── 发布抽屉 ─────────────────────────────────────────── */
 
+/* 弹层打开时锁住底层滚动，手指滑到抽屉边界也不会带动列表 / 编辑器 */
+body.modal-open {
+  overflow: hidden;
+}
+
+body.modal-open .list-body,
+body.modal-open .admin-body,
+body.modal-open .settings-body {
+  overflow: hidden;
+}
+
+body.modal-open #view-editor .vditor-ir,
+body.modal-open #view-editor .vditor-wysiwyg,
+body.modal-open #view-editor .vditor-sv {
+  overflow: hidden;
+}
+
 .sheet-mask {
   position: fixed;
   inset: 0;
@@ -675,6 +693,41 @@ body {
   flex-direction: column;
   gap: 10px;
   padding: 0 16px 4px;
+}
+
+/* 搜索框 + 分类筛选同一行：搜索占满剩余宽度，分类下拉保持易点按的宽度 */
+.list-search-row {
+  display: flex;
+  gap: 10px;
+}
+
+.list-search-row .search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.category-select {
+  flex: 0 0 auto;
+  max-width: 116px;
+  padding: 10px 30px 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background-color: var(--surface);
+  /* 自绘箭头：颜色跟随 --ink-3，深浅色模式下都清晰 */
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 17px, calc(100% - 10px) 17px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 13.5px;
+  outline: none;
+}
+
+.category-select:focus {
+  border-color: var(--accent);
 }
 
 .search-input {

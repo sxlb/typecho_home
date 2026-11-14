@@ -42,13 +42,18 @@
           </div>
         </header>
         <div class="list-tools">
-          <input
-            class="search-input"
-            id="list-search"
-            type="search"
-            placeholder="搜索标题"
-            autocomplete="off"
-          />
+          <div class="list-search-row">
+            <input
+              class="search-input"
+              id="list-search"
+              type="search"
+              placeholder="搜索标题"
+              autocomplete="off"
+            />
+            <select class="category-select" id="list-category" aria-label="按分类筛选">
+              <option value="">全部分类</option>
+            </select>
+          </div>
           <div class="chips filters" id="list-filters">
             <button class="chip active" type="button" data-filter="all">全部</button>
             <button class="chip" type="button" data-filter="publish">已发布</button>

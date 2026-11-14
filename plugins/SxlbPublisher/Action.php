@@ -297,7 +297,8 @@ class Action extends Widget implements ActionInterface
             max(1, $this->intParam('page', 1)),
             min(50, max(1, $this->intParam('size', 20))),
             (string) $this->param('status', ''),
-            (string) $this->param('keyword', '')
+            (string) $this->param('keyword', ''),
+            $this->intParam('mid')
         );
 
         $this->ok($goods);

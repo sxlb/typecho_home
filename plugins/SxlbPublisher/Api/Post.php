@@ -44,8 +44,14 @@ class Post
      *
      * @return array{items: array, total: int, page: int, size: int}
      */
-    public static function listing(Db $db, int $page, int $size, string $status, string $keyword = ''): array
-    {
+    public static function listing(
+        Db $db,
+        int $page,
+        int $size,
+        string $status,
+        string $keyword = '',
+        int $mid = 0
+    ): array {
         // scheduled 与 publish 同属 type=post，区别在于 created 是否已到发布时间
         $type = $status === 'draft'
             ? 'post_draft'
@@ -53,13 +59,30 @@ class Post
         $now = time();
 
         $countQuery = $db->select(['COUNT(table.contents.cid)' => 'num'])->from('table.contents');
-        $rowsQuery = $db->select('cid', 'title', 'slug', 'created', 'modified', 'status', 'type')
+        // 表别名全限定：分类筛选会 JOIN relationships，cid 等列名会冲突
+        $rowsQuery = $db->select(
+            ['table.contents.cid' => 'cid'],
+            ['table.contents.title' => 'title'],
+            ['table.contents.slug' => 'slug'],
+            ['table.contents.created' => 'created'],
+            ['table.contents.modified' => 'modified'],
+            ['table.contents.status' => 'status'],
+            ['table.contents.type' => 'type']
+        )
             ->from('table.contents')
             ->order('table.contents.created', Db::SORT_DESC)
             ->page($page, $size);
 
         self::applyTypeFilter($countQuery, $type);
         self::applyTypeFilter($rowsQuery, $type);
+
+        // 按分类筛选：同一文章在 relationships 里对同一 mid 只有一条记录，COUNT 不会翻倍
+        if ($mid > 0) {
+            $countQuery->join('table.relationships', 'table.relationships.cid = table.contents.cid')
+                ->where('table.relationships.mid = ?', $mid);
+            $rowsQuery->join('table.relationships', 'table.relationships.cid = table.contents.cid')
+                ->where('table.relationships.mid = ?', $mid);
+        }
 
         $keyword = trim($keyword);
 
@@ -179,7 +202,8 @@ class Post
             'cid' => $cid,
             'title' => $title !== '' ? $title : '未命名文档',
             'text' => $text,
-            'slug' => trim((string) ($in['slug'] ?? '')),
+            // 缩略名统一在服务端兜底：留空自动生成，非法值直接提示，重复自动追加序号
+            'slug' => self::normalizeSlug($db, (string) ($in['slug'] ?? ''), $title, $cid),
             'type' => $isDraft ? 'post_draft' : 'post',
             'status' => 'publish',
             'authorId' => max(1, (int) ($config->authorId ?? 1)),
@@ -201,7 +225,14 @@ class Post
             $fallback = self::defaultCategoryId($db);
             $categories = $fallback > 0 ? [$fallback] : [];
         } else {
-            $categories = array_values(array_filter(array_map('intval', $categories)));
+            $categories = array_values(array_unique(array_filter(array_map('intval', $categories))));
+            // 客户端可能带着已删除的分类 mid 保存，过滤掉不存在的，避免写入孤立关系
+            $categories = self::filterCategoryIds($db, $categories);
+
+            if (empty($categories)) {
+                $fallback = self::defaultCategoryId($db);
+                $categories = $fallback > 0 ? [$fallback] : [];
+            }
         }
 
         $tags = $in['tags'] ?? '';
@@ -253,6 +284,95 @@ class Post
         }
 
         return $query;
+    }
+
+    /**
+     * 规范化缩略名：留空自动生成、非法值拒绝、重复自动追加序号
+     *
+     * 已存在文章的原 slug 允许原样保留（网页端可能写过中文 slug），
+     * 只有用户主动修改时才按新规则校验，避免老文章在 App 里改不动。
+     */
+    private static function normalizeSlug(Db $db, string $slug, string $title, int $cid): string
+    {
+        $slug = trim($slug);
+        $current = '';
+
+        if ($cid > 0) {
+            $row = $db->fetchRow(
+                $db->select('slug')->from('table.contents')
+                    ->where('table.contents.cid = ?', $cid)->limit(1)
+            );
+            $current = $row ? (string) $row['slug'] : '';
+        }
+
+        if ($slug === '') {
+            $slug = self::slugFromTitle($title);
+        } elseif ($slug !== $current && !preg_match('/^[A-Za-z0-9_-]+$/', $slug)) {
+            throw new \RuntimeException('固定链接只能包含字母、数字、下划线和短横线');
+        }
+
+        return self::uniqueSlug($db, $slug, $cid);
+    }
+
+    /**
+     * 由标题生成合法的 ASCII 缩略名，生成不出来时退回 post
+     */
+    private static function slugFromTitle(string $title): string
+    {
+        $slug = '';
+
+        if (class_exists(\Typecho\Common::class) && method_exists(\Typecho\Common::class, 'slugName')) {
+            $slug = (string) \Typecho\Common::slugName($title);
+        } else {
+            $slug = $title;
+        }
+
+        $slug = trim((string) preg_replace('/[^A-Za-z0-9_-]+/', '-', $slug), '-_');
+
+        return $slug !== '' ? $slug : 'post';
+    }
+
+    /**
+     * 保证缩略名全局唯一（同一篇文章自身不算冲突）
+     */
+    private static function uniqueSlug(Db $db, string $slug, int $cid): string
+    {
+        for ($suffix = 1; $suffix <= 100; $suffix += 1) {
+            $candidate = $suffix === 1 ? $slug : $slug . '-' . $suffix;
+            $query = $db->select('cid')->from('table.contents')
+                ->where('table.contents.slug = ?', $candidate)->limit(1);
+
+            if ($cid > 0) {
+                $query->where('table.contents.cid <> ?', $cid);
+            }
+
+            if (!$db->fetchRow($query)) {
+                return $candidate;
+            }
+        }
+
+        // 极端情况下（同名超过 100 篇）用随机串兜底，避免死循环
+        return $slug . '-' . substr(bin2hex(random_bytes(4)), 0, 8);
+    }
+
+    /**
+     * 过滤掉数据库里已不存在的分类 mid
+     */
+    private static function filterCategoryIds(Db $db, array $mids): array
+    {
+        if (empty($mids)) {
+            return [];
+        }
+
+        $valid = array_map('intval', array_column(
+            $db->fetchAll(
+                $db->select('table.metas.mid')->from('table.metas')
+                    ->where('table.metas.type = ?', 'category')
+            ),
+            'mid'
+        ));
+
+        return array_values(array_intersect($mids, $valid));
     }
 
     /**

@@ -22,6 +22,9 @@ class Upload
 {
     private const UPLOAD_DIR = '/usr/uploads';
 
+    /** 单文件大小上限：客户端会先压缩，这里只是服务端兜底 */
+    private const MAX_SIZE = 5 * 1024 * 1024;
+
     /**
      * @param int $cid 关联文章 cid，0 表示不关联
      * @param int $authorId 附件归属用户
@@ -80,12 +83,21 @@ class Upload
      */
     private static function store(array $file): array
     {
+        if ((int) ($file['size'] ?? 0) > self::MAX_SIZE) {
+            throw new \RuntimeException('文件不能超过 5MB');
+        }
+
         $name = str_replace(['"', '<', '>', '\\'], '', (string) $file['name']);
         $name = basename(str_replace('\\', '/', $name));
         $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
 
         if ($ext === '' || !UploadWidget::checkFileType($ext)) {
             throw new \RuntimeException('不允许的上传类型：' . ($ext ?: '未知'));
+        }
+
+        // 扩展名可以伪造，按文件头确认真的是图片（本接口只服务 App 的图片上传）
+        if (!@getimagesize($file['tmp_name'])) {
+            throw new \RuntimeException('文件内容不是有效的图片');
         }
 
         $uploadDir = defined('__TYPECHO_UPLOAD_DIR__') ? __TYPECHO_UPLOAD_DIR__ : self::UPLOAD_DIR;
@@ -97,7 +109,8 @@ class Upload
             throw new \RuntimeException('创建上传目录失败');
         }
 
-        $fileName = sprintf('%u', crc32(uniqid())) . '.' . $ext;
+        // 随机文件名：避免同名覆盖，也避免按时间顺序被枚举
+        $fileName = bin2hex(random_bytes(8)) . '.' . $ext;
         $target = $directory . '/' . $fileName;
 
         if (!@move_uploaded_file($file['tmp_name'], $target)) {

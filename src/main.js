@@ -41,6 +41,7 @@ const el = {
   listMore: $('#list-more'),
   listSearch: $('#list-search'),
   listFilters: $('#list-filters'),
+  listCategory: $('#list-category'),
   title: $('#post-title'),
   editorStatus: $('#editor-status'),
   sheet: $('#sheet'),
@@ -97,6 +98,8 @@ const state = {
   toastTimer: null,
   posts: [],
   filter: 'all',
+  // 分类筛选：0 表示全部分类，其余为 mid
+  category: 0,
   query: '',
   page: 1,
   hasMore: false,
@@ -281,6 +284,11 @@ async function loadPosts({ reset = true } = {}) {
       query.keyword = state.query.trim();
     }
 
+    // 分类筛选交给服务端 JOIN，才能保证分页总数正确
+    if (state.category) {
+      query.mid = state.category;
+    }
+
     const data = await call('posts', { query });
 
     // 期间又发起了新请求，本次结果已过期，直接丢弃
@@ -364,9 +372,18 @@ function renderList() {
 
   const showLocal = filter === 'all' || filter === 'local' || filter === 'draft';
   const drafts = showLocal
-    ? localDraftItems().filter(
-        (draft) => !keyword || String(draft.title || '').toLowerCase().includes(keyword),
-      )
+    ? localDraftItems().filter((draft) => {
+        if (keyword && !String(draft.title || '').toLowerCase().includes(keyword)) {
+          return false;
+        }
+
+        // 选了分类时，本地草稿也按所属分类过滤
+        if (state.category && !(draft.mid || []).map(Number).includes(state.category)) {
+          return false;
+        }
+
+        return true;
+      })
     : [];
 
   el.listItems.innerHTML = '';
@@ -392,17 +409,23 @@ function renderList() {
   });
 
   serverItems.forEach((item) => {
+    // 本地草稿比服务端新：说明上次改动没同步上去，列表上给出提示
+    const local = readDraft(String(item.cid));
+    const unsynced = Boolean(local && (local.updatedAt || 0) > (item.modified || 0) * 1000);
+
     const badge = item.scheduled
       ? '<span class="badge scheduled">定时</span>'
       : item.status === 'draft'
         ? '<span class="badge draft">草稿</span>'
         : '<span class="badge">已发布</span>';
 
+    const localBadge = unsynced ? '<span class="badge local">本地有改动</span>' : '';
+
     fragment.appendChild(
       createItem({
         key: `post-${item.cid}`,
         title: item.title || '未命名文档',
-        badge,
+        badge: badge + localBadge,
         time: formatDate(item.created),
         item: { local: false, ...item },
       }),
@@ -589,10 +612,16 @@ function currentFields() {
   };
 }
 
-async function ensureMetas() {
+/**
+ * 拉取分类 / 标签元数据
+ *
+ * @param {{silent?: boolean}} [options] silent 用于首页静默加载筛选项，失败不打扰用户
+ */
+async function ensureMetas({ silent = false } = {}) {
   if (state.metasLoaded) {
     renderCategoryChips();
     renderTagChips();
+    renderListCategories();
     return;
   }
 
@@ -603,9 +632,31 @@ async function ensureMetas() {
     state.metasLoaded = true;
     renderCategoryChips();
     renderTagChips();
+    renderListCategories();
   } catch (error) {
-    toast(`分类加载失败：${error.message}`);
+    if (!silent) {
+      toast(`分类加载失败：${error.message}`);
+    }
   }
+}
+
+/** 列表顶部的分类筛选下拉：只在元数据加载完成后渲染一次 */
+function renderListCategories() {
+  if (!el.listCategory) {
+    return;
+  }
+
+  const current = String(state.category || '');
+  el.listCategory.innerHTML = '<option value="">全部分类</option>';
+
+  state.categories.forEach((category) => {
+    const option = document.createElement('option');
+    option.value = String(category.mid);
+    option.textContent = category.name;
+    el.listCategory.appendChild(option);
+  });
+
+  el.listCategory.value = current;
 }
 
 /** 已选标签 + 输入框里新输入的标签，去重后返回 */
@@ -907,10 +958,37 @@ function backToList() {
 // 抽屉关闭动画延时器：快速连续开关时取消上一次
 let sheetTimer = null;
 
+/** 所有会盖住页面的弹层，任意一个打开时锁住底层滚动 */
+const OVERLAY_IDS = [
+  'sheet',
+  'history-sheet',
+  'item-sheet',
+  'theme-sheet',
+  'table-sheet',
+  'snippet-sheet',
+  'dialog',
+];
+
+/**
+ * 根据弹层显隐同步 body.modal-open
+ *
+ * 编辑器里的面板由 editor.js 派发 sxlb:overlay 事件触发重算。
+ */
+function syncModalLock() {
+  const open = OVERLAY_IDS.some((id) => {
+    const node = document.getElementById(id);
+
+    return node && !node.hidden;
+  });
+
+  document.body.classList.toggle('modal-open', open);
+}
+
 function showSheet(sheet, mask) {
   clearTimeout(sheetTimer);
   sheet.hidden = false;
   mask.hidden = false;
+  syncModalLock();
   requestAnimationFrame(() => {
     sheet.classList.add('open');
     mask.classList.add('open');
@@ -924,6 +1002,7 @@ function hideSheet(sheet, mask) {
   sheetTimer = setTimeout(() => {
     sheet.hidden = true;
     mask.hidden = true;
+    syncModalLock();
   }, 260);
 }
 
@@ -1478,6 +1557,20 @@ function bind() {
     }
   });
 
+  // 分类筛选：切换后重新从服务端拉第一页
+  el.listCategory?.addEventListener('change', () => {
+    state.category = Number(el.listCategory.value) || 0;
+
+    if (isConfigured()) {
+      loadPosts({ reset: true });
+    } else {
+      renderList();
+    }
+  });
+
+  // 编辑器里的弹层由 editor.js 派发事件，统一重算滚动锁
+  window.addEventListener('sxlb:overlay', syncModalLock);
+
   el.title.addEventListener('input', () => {
     state.dirty = true;
     scheduleAutosave();
@@ -1566,16 +1659,39 @@ function bind() {
   });
 
   // 列表下拉刷新（简版：滚到顶部再下拉触发）
-  let touchStartY = 0;
-  $('#list-body').addEventListener('touchstart', (event) => {
-    touchStartY = event.touches[0].clientY;
-  });
-  $('#list-body').addEventListener('touchend', (event) => {
-    const delta = event.changedTouches[0].clientY - touchStartY;
-    if (delta > 90 && $('#list-body').scrollTop === 0) {
+  let pullStart = null;
+  const listBody = $('#list-body');
+
+  listBody.addEventListener('touchstart', (event) => {
+    // 多指缩放 / 双指手势不参与刷新判定
+    pullStart = event.touches.length > 1
+      ? null
+      : { x: event.touches[0].clientX, y: event.touches[0].clientY };
+  }, { passive: true });
+
+  listBody.addEventListener('touchmove', (event) => {
+    if (event.touches.length > 1) {
+      pullStart = null;
+    }
+  }, { passive: true });
+
+  listBody.addEventListener('touchend', (event) => {
+    const start = pullStart;
+    pullStart = null;
+
+    if (!start || event.touches.length || document.body.classList.contains('modal-open')) {
+      return;
+    }
+
+    const touch = event.changedTouches[0];
+    const deltaY = touch.clientY - start.y;
+    const deltaX = Math.abs(touch.clientX - start.x);
+
+    // 只有接近垂直的下拉才触发，横向滑动（切换/滚动）和斜滑一律忽略
+    if (deltaY > 90 && deltaY > deltaX * 1.5 && listBody.scrollTop === 0) {
       loadPosts();
     }
-  });
+  }, { passive: true });
 
   // 安卓物理返回键
   if (window.Capacitor?.isNativePlatform?.()) {
@@ -1622,6 +1738,8 @@ bind();
 
 if (isConfigured()) {
   loadPosts();
+  // 首页分类筛选项：静默加载，失败不影响列表
+  ensureMetas({ silent: true });
 
   const lastCheck = Number(localStorage.getItem('sxlb.updateCheck') || 0);
   if (Date.now() - lastCheck > 24 * 3600 * 1000) {
