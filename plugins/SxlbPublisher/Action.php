@@ -133,6 +133,7 @@ class Action extends Widget implements ActionInterface
     {
         $token = (string) $this->request->getHeader('X-Sxlb-Token');
         $ts = (string) $this->request->getHeader('X-Sxlb-Ts');
+        $nonce = (string) $this->request->getHeader('X-Sxlb-Nonce');
         $sign = (string) $this->request->getHeader('X-Sxlb-Sign');
 
         $expectedToken = (string) ($this->config->apiToken ?? '');
@@ -146,6 +147,10 @@ class Action extends Widget implements ActionInterface
             throw new \RuntimeException('缺少鉴权请求头');
         }
 
+        if (!preg_match('/^[A-Za-z0-9]{32}$/', $nonce)) {
+            throw new \RuntimeException('缺少或非法的请求随机串');
+        }
+
         if (!ctype_digit($ts) || abs(time() - (int) $ts) > self::MAX_SKEW) {
             throw new \RuntimeException('时间戳无效或已过期');
         }
@@ -154,12 +159,51 @@ class Action extends Widget implements ActionInterface
         $path = '/writer-api/' . $action . ($sub !== '' ? '/' . $sub : '');
         $query = (string) ($_SERVER['QUERY_STRING'] ?? '');
         // query 一并纳入签名，避免鉴权通过后篡改 page / status / cid 等参数
-        $message = $ts . "\n" . $path . ($query !== '' ? '?' . $query : '') . "\n" . $raw;
+        $message = $ts . "\n" . $nonce . "\n" . $path . ($query !== '' ? '?' . $query : '') . "\n" . $raw;
         $expected = hash_hmac('sha256', $message, $secret);
 
         if (!hash_equals($expected, strtolower($sign)) || !hash_equals($expectedToken, $token)) {
             throw new \RuntimeException('签名校验失败');
         }
+
+        // 签名有效但请求重复：拒绝重放（防止截获的删除类请求被二次执行）
+        $this->assertUnusedNonce($nonce);
+    }
+
+    /**
+     * 校验随机串是否首次使用
+     *
+     * 用临时文件做一次性标记，创建采用独占模式（fopen x），并发下只有一个请求能成功。
+     * 标记在时间窗口两倍后过期，由随机触发的清理任务删除。
+     *
+     * @throws \RuntimeException
+     */
+    private function assertUnusedNonce(string $nonce): void
+    {
+        $dir = rtrim(sys_get_temp_dir(), '/\\') . '/sxlb-nonce';
+
+        if (!is_dir($dir) && !@mkdir($dir, 0700, true) && !is_dir($dir)) {
+            throw new \RuntimeException('防重放缓存目录不可写');
+        }
+
+        $now = time();
+
+        // 每 20 次请求抽一次清理，避免每个请求都遍历目录
+        if (random_int(1, 20) === 1) {
+            foreach ((array) glob($dir . '/*') as $file) {
+                if (is_file($file) && $now - (int) filemtime($file) > self::MAX_SKEW * 2) {
+                    @unlink($file);
+                }
+            }
+        }
+
+        $handle = @fopen($dir . '/' . hash('sha256', $nonce), 'x');
+
+        if ($handle === false) {
+            throw new \RuntimeException('请求已被处理，请勿重复提交');
+        }
+
+        fclose($handle);
     }
 
     /**

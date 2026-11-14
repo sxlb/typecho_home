@@ -262,6 +262,11 @@ async function loadPosts({ reset = true } = {}) {
   try {
     const query = { page: state.page, size: PAGE_SIZE };
 
+    // 草稿 / 已发布 / 定时交给服务端过滤，否则分页总数与翻页都对不上
+    if (['draft', 'publish', 'scheduled'].includes(state.filter)) {
+      query.status = state.filter;
+    }
+
     // 搜索走服务端标题检索，否则只能搜到已加载的几页
     if (state.query.trim()) {
       query.keyword = state.query.trim();
@@ -1424,6 +1429,11 @@ function bind() {
       chip.classList.toggle('active', chip === button);
     });
     renderList();
+
+    // 分页数据是按上一个筛选条件拉取的，切换后必须重新请求，避免「全部」只剩残缺列表
+    if (isConfigured()) {
+      loadPosts({ reset: true });
+    }
   });
 
   el.title.addEventListener('input', () => {

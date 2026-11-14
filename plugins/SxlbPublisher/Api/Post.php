@@ -46,7 +46,11 @@ class Post
      */
     public static function listing(Db $db, int $page, int $size, string $status, string $keyword = ''): array
     {
-        $type = $status === 'draft' ? 'post_draft' : ($status === 'publish' ? 'post' : null);
+        // scheduled 与 publish 同属 type=post，区别在于 created 是否已到发布时间
+        $type = $status === 'draft'
+            ? 'post_draft'
+            : (in_array($status, ['publish', 'scheduled'], true) ? 'post' : null);
+        $now = time();
 
         $countQuery = $db->select(['COUNT(table.contents.cid)' => 'num'])->from('table.contents');
         $rowsQuery = $db->select('cid', 'title', 'slug', 'created', 'modified', 'status', 'type')
@@ -66,8 +70,16 @@ class Post
             $rowsQuery->where('table.contents.title LIKE ?', $like);
         }
 
+        // 定时发布：Typecho 用 type=post + status=publish + created 在未来表示待发布
+        if ($status === 'publish') {
+            $countQuery->where('table.contents.created <= ?', $now);
+            $rowsQuery->where('table.contents.created <= ?', $now);
+        } elseif ($status === 'scheduled') {
+            $countQuery->where('table.contents.created > ?', $now);
+            $rowsQuery->where('table.contents.created > ?', $now);
+        }
+
         $total = (int) $db->fetchObject($countQuery)->num;
-        $now = time();
         $items = [];
 
         foreach ($db->fetchAll($rowsQuery) as $row) {

@@ -2,7 +2,8 @@
  * 接口封装：HMAC 签名 + 请求发送
  *
  * 签名串与服务端保持一致：
- *   ts + "\n" + path + "\n" + rawBody
+ *   ts + "\n" + nonce + "\n" + path + "\n" + rawBody
+ * nonce 为每次请求新生成的 32 位随机串，服务端用它做一次性校验，防止请求被重放。
  * multipart 上传无法读取原始请求体，约定对空串签名。
  */
 
@@ -68,13 +69,39 @@ async function sign(secret, message) {
     .join('');
 }
 
+/**
+ * 生成一次性随机串
+ *
+ * 16 字节转十六进制得到 32 位，与服务端 /^[A-Za-z0-9]{32}$/ 的校验一致。
+ *
+ * @returns {string}
+ */
+function createNonce() {
+  const bytes = new Uint8Array(16);
+
+  if (window.crypto?.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    // 极端环境兜底：没有 CSPRNG 时用时间与随机数拼出 32 位十六进制
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 async function authHeaders(secret, path, rawBody) {
   const ts = String(Math.floor(Date.now() / 1000));
-  const signature = await sign(secret, `${ts}\n${path}\n${rawBody}`);
+  const nonce = createNonce();
+  const signature = await sign(secret, `${ts}\n${nonce}\n${path}\n${rawBody}`);
 
   return {
     'X-Sxlb-Token': getSettings().token,
     'X-Sxlb-Ts': ts,
+    'X-Sxlb-Nonce': nonce,
     'X-Sxlb-Sign': signature,
   };
 }
