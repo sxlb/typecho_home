@@ -118,6 +118,13 @@ function selected(fallback) {
   return sel || fallback;
 }
 
+/** 手工改完正文后同步给外部（自动保存 / 字数统计） */
+function notifyChange() {
+  if (changeHandler) {
+    changeHandler(getEditorValue());
+  }
+}
+
 /* ─── 主题内置元素（对齐 Handsome 后台编辑器） ───────────── */
 
 async function insertImage() {
@@ -406,7 +413,6 @@ const THEME_ICON =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>';
 
 let themeGridReady = false;
-let tableGridReady = false;
 
 /* ─── 底部抽屉通用逻辑 ─────────────────────────────────── */
 
@@ -447,14 +453,12 @@ function closeSheet(sheetId, maskId) {
 }
 
 /**
- * 关闭编辑器里打开的底部面板（主题元素 / 表格）
+ * 关闭编辑器里的底部面板
  *
  * @returns {boolean} 是否有面板被关闭（供安卓返回键判断）
  */
 export function closeEditorSheets() {
-  const themeClosed = closeSheet('theme-sheet', 'theme-mask');
-  const tableClosed = closeSheet('table-sheet', 'table-mask');
-  return themeClosed || tableClosed;
+  return closeSheet('theme-sheet', 'theme-mask');
 }
 
 function createCells(grid, items, onPick) {
@@ -509,87 +513,58 @@ function openThemeSheet() {
   openSheet('theme-sheet', 'theme-mask');
 }
 
-/* ─── 表格工具面板 ─────────────────────────────────────── */
+/* ─── 表格删除（插入沿用 Vditor 原生表格按钮） ─────────── */
 
 function getIrRoot() {
   return document.querySelector('#editor .vditor-ir');
 }
 
-let activeCell = null;
+let activeTable = null;
 
-function currentCell() {
+function liveCell() {
   const selection = window.getSelection();
 
-  if (selection && selection.rangeCount > 0) {
-    const root = getIrRoot();
-    let node = selection.anchorNode;
-
-    while (node && node !== root) {
-      if (node.nodeType === 1 && (node.tagName === 'TD' || node.tagName === 'TH')) {
-        activeCell = node;
-        return node;
-      }
-      node = node.parentNode;
-    }
+  if (!selection || selection.rangeCount === 0) {
+    return null;
   }
 
-  // 抽屉按钮抢走焦点后选区会丢失，回退到打开面板时记住的格子
-  return activeCell && activeCell.isConnected ? activeCell : null;
+  const root = getIrRoot();
+  let node = selection.anchorNode;
+
+  while (node && node !== root) {
+    if (node.nodeType === 1 && (node.tagName === 'TD' || node.tagName === 'TH')) {
+      return node;
+    }
+    node = node.parentNode;
+  }
+
+  return null;
 }
+
+// 记住光标最后停留的表格：点工具栏按钮时选区可能会丢
+document.addEventListener('selectionchange', () => {
+  const cell = liveCell();
+
+  if (cell) {
+    activeTable = cell.closest('table');
+  }
+});
 
 function currentTable() {
-  const cell = currentCell();
-  return cell ? cell.closest('table') : null;
-}
+  const cell = liveCell();
 
-function focusBlock(block) {
-  const range = document.createRange();
-  range.selectNodeContents(block);
-  range.collapse(true);
-
-  const selection = window.getSelection();
-  selection.removeAllRanges();
-  selection.addRange(range);
-}
-
-function notifyChange() {
-  if (changeHandler) {
-    changeHandler(getEditorValue());
-  }
-}
-
-function insertTable() {
-  insert('\n| 列 1 | 列 2 | 列 3 |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |\n');
-}
-
-function paragraphAfterTable() {
-  const table = currentTable();
-
-  if (!table) {
-    errorHandler?.('先把光标点进表格里');
-    return;
+  if (cell) {
+    activeTable = cell.closest('table');
+    return activeTable;
   }
 
-  const next = table.nextElementSibling;
-
-  if (next && next.tagName === 'P') {
-    focusBlock(next);
-    return;
-  }
-
-  const paragraph = document.createElement('p');
-  paragraph.setAttribute('data-block', '0');
-
-  if (next) {
-    next.before(paragraph);
-  } else {
-    table.after(paragraph);
-  }
-
-  focusBlock(paragraph);
-  notifyChange();
+  return activeTable && activeTable.isConnected ? activeTable : null;
 }
 
+/**
+ * 删除光标所在的整张表格。
+ * 直接改 markdown 再回填，避免手工删 DOM 让 Vditor 内部状态和正文不一致。
+ */
 function deleteCurrentTable() {
   const table = currentTable();
 
@@ -598,96 +573,59 @@ function deleteCurrentTable() {
     return;
   }
 
-  const next = table.nextElementSibling;
+  const tables = Array.from(document.querySelectorAll('#editor .vditor-ir table'));
+  const index = tables.indexOf(table);
+  const lines = getEditorValue().split('\n');
 
-  if (next) {
-    table.remove();
-    focusBlock(next);
-  } else {
-    const paragraph = document.createElement('p');
-    paragraph.setAttribute('data-block', '0');
-    table.replaceWith(paragraph);
-    focusBlock(paragraph);
+  // 收集 markdown 里的表格块（连续以 | 开头的行），跳过代码块内的内容
+  const blocks = [];
+  let inFence = false;
+  let start = -1;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+
+    if (line.startsWith('```')) {
+      inFence = !inFence;
+      start = -1;
+      continue;
+    }
+
+    if (!inFence && line.startsWith('|')) {
+      if (start < 0) {
+        start = i;
+      }
+    } else if (start >= 0) {
+      blocks.push([start, i - 1]);
+      start = -1;
+    }
   }
 
+  if (start >= 0) {
+    blocks.push([start, lines.length - 1]);
+  }
+
+  if (index < 0 || index >= blocks.length) {
+    errorHandler?.('没定位到表格，请重新点一下表格再删');
+    return;
+  }
+
+  const [from, to] = blocks[index];
+  lines.splice(from, to - from + 1);
+
+  const text = lines.join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '');
+
+  if (vditor) {
+    // 不清空撤销栈，删错了还能撤销
+    vditor.setValue(text);
+  }
+
+  activeTable = null;
   notifyChange();
 }
 
-function deleteCurrentRow() {
-  const cell = currentCell();
-
-  if (!cell) {
-    errorHandler?.('先把光标点进表格里');
-    return;
-  }
-
-  const row = cell.closest('tr');
-  const body = row?.parentElement;
-
-  if (!row || !body) {
-    return;
-  }
-
-  if (body.tagName === 'THEAD') {
-    errorHandler?.('表头行不能删除');
-    return;
-  }
-
-  if (body.rows.length <= 1) {
-    deleteCurrentTable();
-    return;
-  }
-
-  row.remove();
-
-  const firstCell = body.querySelector('td');
-  if (firstCell) {
-    focusBlock(firstCell);
-  }
-
-  notifyChange();
-}
-
-const TABLE_ITEMS = [
-  { glyph: '插', label: '插入表格', run: insertTable },
-  { glyph: '段', label: '表格后加一段', run: paragraphAfterTable },
-  { glyph: '行', label: '删除当前行', run: deleteCurrentRow },
-  { glyph: '删', label: '删除整个表格', run: deleteCurrentTable },
-];
-
-const TABLE_ICON =
-  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.5 9.5v10M15 9.5v10"/></svg>';
-
-function ensureTableGrid() {
-  if (tableGridReady) {
-    return;
-  }
-
-  const grid = document.getElementById('table-grid');
-
-  if (!grid) {
-    return;
-  }
-
-  createCells(grid, TABLE_ITEMS, (item) => {
-    closeSheet('table-sheet', 'table-mask');
-    // 等抽屉开始收起再操作 DOM，避免焦点被抽屉抢走
-    setTimeout(() => item.run(), 60);
-  });
-
-  document.getElementById('table-close')?.addEventListener('click', () => closeSheet('table-sheet', 'table-mask'));
-  document.getElementById('table-mask')?.addEventListener('click', () => closeSheet('table-sheet', 'table-mask'));
-
-  tableGridReady = true;
-}
-
-function openTableSheet() {
-  ensureTableGrid();
-  // 先记住当前表格位置：抽屉一旦获得焦点，编辑器的选区就会丢失
-  activeCell = null;
-  currentCell();
-  openSheet('table-sheet', 'table-mask');
-}
+const DELETE_TABLE_ICON =
+  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.5 9.5v10"/><path d="M14 16.5h4.5"/></svg>';
 
 const CAMERA_ICON =
   '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.2"/></svg>';
@@ -729,8 +667,9 @@ export function initEditor({ value, onChange, getCid, onError }) {
       { name: 'inline-code', tip: '行内代码' },
       { name: 'code', tip: '代码块' },
       { name: 'link', tip: '链接' },
-      // 用自定义名字，避免和 Vditor 内置的 table 项合并（内置项点一下就直接插入表格）
-      { name: 'tabletools', tip: '表格', icon: TABLE_ICON, click: openTableSheet },
+      // 表格插入沿用 Vditor 原生按钮（带行列选择），旁边单独放删除
+      { name: 'table', tip: '表格' },
+      { name: 'tabledelete', tip: '删除表格', icon: DELETE_TABLE_ICON, click: deleteCurrentTable },
       { name: 'upload', tip: '上传图片' },
       { name: 'camera', tip: '拍照', icon: CAMERA_ICON, click: openCamera },
       { name: 'theme', tip: '主题元素', icon: THEME_ICON, click: openThemeSheet },

@@ -851,10 +851,6 @@ body {
   gap: 10px;
 }
 
-.theme-grid--two {
-  grid-template-columns: repeat(2, 1fr);
-}
-
 /* 标签多选：超出高度后内部滚动 */
 .tag-chips {
   max-height: 118px;
