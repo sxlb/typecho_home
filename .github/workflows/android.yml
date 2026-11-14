@@ -39,6 +39,12 @@ jobs:
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
 
+      - name: 读取插件版本
+        id: plugin
+        run: |
+          VERSION=$(grep -oP "const VERSION = '\K[^']+" plugins/SxlbPublisher/Plugin.php)
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: 安装依赖
         run: npm ci
 
@@ -67,8 +73,14 @@ jobs:
       - name: 重命名产物
         run: cp android/app/build/outputs/apk/debug/app-debug.apk sxlb-writer.apk
 
-      # 直接以 .apk 附件发布，下载后即可安装，不需要解压
-      - name: 发布 Release
+      # 插件单独打包，zip 根目录是 SxlbPublisher/，解压后直接放进 usr/plugins/
+      - name: 打包插件
+        run: |
+          cd plugins
+          zip -r ../sxlb-publisher.zip SxlbPublisher
+
+      # App 与插件分开发布：latest 始终指向 App，plugin-latest 固定指向插件
+      - name: 发布 App Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
@@ -79,4 +91,18 @@ jobs:
             构建记录：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           files: sxlb-writer.apk
           make_latest: true
+          overwrite_files: true
+
+      - name: 发布插件 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: plugin-latest
+          name: 插件最新构建
+          body: |
+            版本：${{ steps.plugin.outputs.value }}
+            提交：${{ github.sha }}
+            构建记录：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            安装：解压后把 SxlbPublisher 目录上传到 usr/plugins/，后台启用即可
+          files: sxlb-publisher.zip
+          make_latest: false
           overwrite_files: true
