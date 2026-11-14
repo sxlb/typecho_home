@@ -52,11 +52,19 @@ const el = {
   dialog: $('#dialog'),
   appVersion: $('#app-version'),
   toast: $('#toast'),
+  check: {
+    panel: $('#publish-check'),
+    toggle: $('#check-toggle'),
+    title: $('#check-title'),
+    count: $('#check-count'),
+    list: $('#check-list'),
+  },
   settings: {
     server: $('#set-server'),
     token: $('#set-token'),
     secret: $('#set-secret'),
     mode: $('#set-editor-mode'),
+    theme: $('#set-theme'),
   },
 };
 
@@ -78,6 +86,8 @@ const state = {
   query: '',
   update: null,
   item: null,
+  allowWarnings: false,
+  checkDraft: true,
 };
 
 // ─── 通用 ────────────────────────────────────────────────────────────────
@@ -97,6 +107,35 @@ function toast(message) {
   state.toastTimer = setTimeout(() => {
     el.toast.hidden = true;
   }, 2200);
+}
+
+const themeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+/**
+ * 解析外观偏好为实际的 light / dark
+ *
+ * @param {'auto'|'light'|'dark'} pref
+ * @returns {'light'|'dark'}
+ */
+function resolveTheme(pref) {
+  if (pref === 'light' || pref === 'dark') {
+    return pref;
+  }
+
+  return themeQuery?.matches ? 'dark' : 'light';
+}
+
+/**
+ * 把外观写到 <html data-theme>，CSS 变量与 Vditor 主题都依赖它
+ *
+ * @param {'auto'|'light'|'dark'} [pref]
+ */
+function applyTheme(pref = getSettings().theme) {
+  const theme = resolveTheme(pref);
+  document.documentElement.dataset.theme = theme;
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute('content', theme === 'dark' ? '#161514' : '#f6f5f2');
 }
 
 function formatDate(timestamp) {
@@ -474,6 +513,7 @@ function renderTagChips() {
         state.selectedTagNames.add(name);
       }
       chip.classList.toggle('active');
+      refreshCheck();
     });
     el.tagChips.appendChild(chip);
   }
@@ -494,6 +534,7 @@ function renderCategoryChips() {
         state.selectedMids.add(category.mid);
       }
       chip.classList.toggle('active');
+      refreshCheck();
     });
     el.categoryChips.appendChild(chip);
   }
@@ -696,10 +737,193 @@ function hideSheet(sheet, mask) {
   }, 260);
 }
 
+// ─── 发布前检查 ──────────────────────────────────────────────────────────
+
+let checkOpen = false;
+
+function setCheckOpen(open) {
+  el.check.panel.classList.toggle('open', open);
+  el.check.list.hidden = !open;
+  el.check.toggle.setAttribute('aria-expanded', String(open));
+  checkOpen = open;
+}
+
+function flash(node) {
+  if (!node) {
+    return;
+  }
+
+  node.classList.remove('flash');
+  void node.offsetWidth;
+  node.classList.add('flash');
+  setTimeout(() => node.classList.remove('flash'), 1200);
+}
+
+/**
+ * 汇总发布前的检查项
+ *
+ * @param {{title: string, text: string, isDraft: boolean}} input
+ * @returns {Array<{level: 'error'|'warn'|'ok', label: string, fix?: string}>}
+ */
+function collectCheck({ title, text, isDraft }) {
+  const items = [];
+  const words = countWords(text);
+  const slug = el.slug.value.trim();
+
+  if (!title) {
+    items.push({ level: 'error', label: '标题还没填', fix: 'title' });
+  } else if (title.length > 40) {
+    items.push({ level: 'warn', label: `标题 ${title.length} 字，超过 40 字在列表里容易折行`, fix: 'title' });
+  }
+
+  if (!text.trim()) {
+    items.push({ level: 'error', label: '正文是空的', fix: 'editor' });
+  } else if (words < 50) {
+    items.push({ level: 'warn', label: `正文只有 ${words} 字，内容偏短`, fix: 'editor' });
+  }
+
+  if (!isDraft && state.selectedMids.size === 0) {
+    items.push({ level: 'error', label: '还没有选择分类', fix: 'category' });
+  }
+
+  if (!el.summary.value.trim()) {
+    items.push({ level: 'warn', label: '摘要为空，将由主题自动截取', fix: 'summary' });
+  }
+
+  if (!el.thumb.value.trim()) {
+    items.push({ level: 'warn', label: '没有封面图，列表里会使用默认图', fix: 'thumb' });
+  }
+
+  if (!collectTags().length) {
+    items.push({ level: 'warn', label: '没有标签，不利于归档和搜索', fix: 'tags' });
+  }
+
+  if (slug && /[^\w-]/.test(slug)) {
+    items.push({ level: 'warn', label: '固定链接含空格或中文，建议只用字母、数字和连字符', fix: 'slug' });
+  }
+
+  if (!items.length) {
+    items.push({ level: 'ok', label: '检查通过，可以发布' });
+  }
+
+  return items;
+}
+
+/**
+ * 点「去填写」定位到对应字段
+ *
+ * @param {string} fix
+ */
+function focusFix(fix) {
+  const map = {
+    title: el.title,
+    summary: el.summary,
+    thumb: el.thumb,
+    slug: el.slug,
+    tags: el.tags,
+    category: el.categoryChips,
+  };
+  const editor =
+    document.querySelector('#editor .vditor-ir .vditor-reset') ||
+    document.querySelector('#editor .vditor-wysiwyg .vditor-reset') ||
+    document.querySelector('#editor .vditor-sv');
+  const target = fix === 'editor' ? editor : map[fix];
+
+  if (!target) {
+    return;
+  }
+
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  target.focus?.({ preventScroll: true });
+  flash(fix === 'category' ? el.categoryChips : target);
+}
+
+/**
+ * 渲染检查面板
+ *
+ * @param {{isDraft?: boolean, expand?: boolean}} [options]
+ */
+function renderCheck({ isDraft = true, expand = false } = {}) {
+  const items = collectCheck({ title: el.title.value.trim(), text: getEditorValue(), isDraft });
+  const errors = items.filter((item) => item.level === 'error');
+  const warnings = items.filter((item) => item.level === 'warn');
+
+  state.checkDraft = isDraft;
+  el.check.panel.hidden = false;
+  el.check.panel.classList.toggle('has-error', errors.length > 0);
+  el.check.panel.classList.toggle('has-warn', errors.length === 0 && warnings.length > 0);
+  el.check.title.textContent = errors.length
+    ? '发布检查：有必须处理的项'
+    : warnings.length
+      ? '发布检查：建议完善'
+      : '发布检查通过';
+  el.check.count.textContent = errors.length
+    ? `${errors.length} 项必须处理`
+    : warnings.length
+      ? `${warnings.length} 项建议`
+      : '';
+
+  el.check.list.innerHTML = '';
+
+  items.forEach((item) => {
+    const li = document.createElement('li');
+    li.className = `check-item ${item.level}`;
+
+    const flag = document.createElement('span');
+    flag.className = 'check-flag';
+    flag.textContent = item.level === 'error' ? '✕' : item.level === 'warn' ? '!' : '✓';
+
+    const label = document.createElement('span');
+    label.textContent = item.label;
+
+    li.append(flag, label);
+
+    if (item.fix) {
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'check-link';
+      link.textContent = '去填写';
+      link.addEventListener('click', () => focusFix(item.fix));
+      li.appendChild(link);
+    }
+
+    el.check.list.appendChild(li);
+  });
+
+  if (expand) {
+    setCheckOpen(true);
+  }
+}
+
+/** 字段改动后重新检查，保持展开状态 */
+function refreshCheck() {
+  if (!el.sheet.hidden) {
+    renderCheck({ isDraft: state.checkDraft, expand: checkOpen });
+  }
+}
+
+/** 恢复发布按钮文案与二次确认状态 */
+function resetPublishConfirm() {
+  state.allowWarnings = false;
+  $('#btn-submit').textContent = '发布';
+}
+
 // ─── 发布抽屉 ────────────────────────────────────────────────────────────
 
 function openSheet() {
   ensureMetas();
+
+  // 先把正文首图填进缩略图，避免检查误报「没有封面」
+  if (!el.thumb.value.trim()) {
+    const cover = firstImageUrl(getEditorValue());
+
+    if (cover) {
+      el.thumb.value = cover;
+    }
+  }
+
+  resetPublishConfirm();
+  renderCheck({ isDraft: true, expand: false });
   showSheet(el.sheet, el.sheetMask);
 }
 
@@ -723,30 +947,32 @@ async function submit(isDraft) {
   const title = el.title.value.trim();
   const text = getEditorValue();
 
-  if (!title) {
-    toast('请先填写标题');
-    return;
-  }
-
-  if (!text.trim()) {
-    toast('正文不能为空');
-    return;
-  }
-
-  if (!isDraft && state.selectedMids.size === 0) {
-    toast('请选择至少一个分类');
-    if (el.sheet.hidden) {
-      openSheet();
-    }
-    return;
-  }
-
   // 没填缩略图时，自动取正文第一张图
   if (!el.thumb.value.trim()) {
     const cover = firstImageUrl(text);
     if (cover) {
       el.thumb.value = cover;
     }
+  }
+
+  const items = collectCheck({ title, text, isDraft });
+  const errors = items.filter((item) => item.level === 'error');
+  const warnings = items.filter((item) => item.level === 'warn');
+
+  if (errors.length) {
+    resetPublishConfirm();
+    renderCheck({ isDraft, expand: true });
+    toast(errors[0].label);
+    return;
+  }
+
+  // 只有建议项时，先展开清单并让发布按钮进入二次确认，避免每篇都被拦
+  if (!isDraft && warnings.length && !state.allowWarnings) {
+    state.allowWarnings = true;
+    $('#btn-submit').textContent = '仍要发布';
+    renderCheck({ isDraft, expand: true });
+    toast(`还有 ${warnings.length} 项建议，确认无误请再点一次`);
+    return;
   }
 
   const body = {
@@ -804,6 +1030,7 @@ async function submit(isDraft) {
   } finally {
     button.disabled = false;
     button.textContent = original;
+    resetPublishConfirm();
   }
 }
 
@@ -882,6 +1109,7 @@ function openSettings() {
   el.settings.token.value = settings.token || '';
   el.settings.secret.value = settings.secret || '';
   el.settings.mode.value = settings.editorMode || DEFAULT_SETTINGS.editorMode;
+  el.settings.theme.value = settings.theme || DEFAULT_SETTINGS.theme;
   renderVersion();
   show('settings');
 }
@@ -915,7 +1143,9 @@ function saveSettingsFromForm() {
     token: el.settings.token.value.trim(),
     secret: el.settings.secret.value.trim(),
     editorMode: el.settings.mode.value || DEFAULT_SETTINGS.editorMode,
+    theme: el.settings.theme.value || DEFAULT_SETTINGS.theme,
   });
+  applyTheme();
 }
 
 function compareVersion(a, b) {
@@ -989,7 +1219,13 @@ function bind() {
   $('#btn-publish').addEventListener('click', openSheet);
   $('#btn-settings-back').addEventListener('click', () => {
     saveSettingsFromForm();
-    isConfigured() ? loadPosts() : show('settings');
+
+    if (isConfigured()) {
+      show('list');
+      loadPosts();
+    } else {
+      show('settings');
+    }
   });
 
   $('#btn-history').addEventListener('click', openHistory);
@@ -1052,6 +1288,22 @@ function bind() {
   });
   $('#btn-check-update').addEventListener('click', () => checkUpdate(true));
 
+  // 外观切换即时预览，点「保存设置」或返回时一并落盘
+  el.settings.theme.addEventListener('change', () => applyTheme(el.settings.theme.value));
+
+  // 发布检查清单：展开/收起，字段改动后自动重算
+  el.check.toggle.addEventListener('click', () => setCheckOpen(!checkOpen));
+  el.sheet.addEventListener('input', () => {
+    resetPublishConfirm();
+    refreshCheck();
+  });
+  el.sheet.addEventListener('click', (event) => {
+    if (event.target.closest('#btn-submit') || event.target.closest('#btn-draft')) {
+      return;
+    }
+    resetPublishConfirm();
+  });
+
   $('#sheet-close').addEventListener('click', closeSheet);
   el.sheetMask.addEventListener('click', closeSheet);
   $('#btn-draft').addEventListener('click', () => submit(true));
@@ -1059,6 +1311,7 @@ function bind() {
 
   $('#btn-thumb-upload').addEventListener('click', () => {
     const input = document.createElement('input');
+    const button = $('#btn-thumb-upload');
     input.type = 'file';
     input.accept = 'image/*';
 
@@ -1067,12 +1320,19 @@ function bind() {
         return;
       }
 
+      button.disabled = true;
+      button.textContent = '上传中…';
+
       try {
         const result = await uploadImage(input.files[0], state.cid);
         el.thumb.value = result.url;
         toast('缩略图已上传');
       } catch (error) {
         toast(error.message);
+      } finally {
+        button.disabled = false;
+        button.textContent = '上传';
+        refreshCheck();
       }
     });
 
@@ -1114,6 +1374,15 @@ function bind() {
     });
   }
 }
+
+applyTheme();
+
+// 跟随系统时，系统在深浅色之间切换要立即生效
+themeQuery?.addEventListener?.('change', () => {
+  if ((getSettings().theme || DEFAULT_SETTINGS.theme) === 'auto') {
+    applyTheme('auto');
+  }
+});
 
 migrateLegacyDraft();
 bind();

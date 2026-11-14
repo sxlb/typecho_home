@@ -118,3 +118,44 @@ export function migrateLegacyDraft() {
 
   localStorage.removeItem(`${DRAFT_PREFIX}new`);
 }
+
+/* ─── 片段库（本机常用模板：开头、声明、SEO 描述等） ─────────── */
+
+const SNIPPET_KEY = 'sxlb.snippets';
+const MAX_SNIPPETS = 50;
+
+export function listSnippets() {
+  const list = readJson(SNIPPET_KEY);
+
+  return Array.isArray(list) ? list : [];
+}
+
+/**
+ * 新增片段，最新的排在最前
+ *
+ * @param {{name?: string, text: string}} data
+ * @returns {object | null} 内容为空时不保存
+ */
+export function addSnippet({ name, text }) {
+  if (!String(text || '').trim()) {
+    return null;
+  }
+
+  const snippet = {
+    id: `s${Date.now().toString(36)}`,
+    name: String(name || '').trim() || '未命名片段',
+    text,
+    at: Date.now(),
+  };
+
+  localStorage.setItem(SNIPPET_KEY, JSON.stringify([snippet, ...listSnippets()].slice(0, MAX_SNIPPETS)));
+
+  return snippet;
+}
+
+export function removeSnippet(id) {
+  const next = listSnippets().filter((item) => item.id !== id);
+  localStorage.setItem(SNIPPET_KEY, JSON.stringify(next));
+
+  return next;
+}

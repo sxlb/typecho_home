@@ -114,6 +114,14 @@
               <option value="sv">分屏预览（左边源码，右边效果）</option>
             </select>
           </label>
+          <label class="field">
+            <span class="field-label">外观</span>
+            <select id="set-theme">
+              <option value="auto">跟随系统</option>
+              <option value="light">浅色</option>
+              <option value="dark">深色</option>
+            </select>
+          </label>
           <div class="settings-actions">
             <button class="btn ghost" id="btn-test">测试连接</button>
             <button class="btn primary" id="btn-save-settings">保存设置</button>
@@ -143,6 +151,15 @@
         </button>
       </div>
       <div class="sheet-body">
+        <div class="check-panel" id="publish-check" hidden>
+          <button type="button" class="check-head" id="check-toggle" aria-expanded="false">
+            <span class="check-dot" id="check-dot"></span>
+            <span class="check-title" id="check-title">发布检查</span>
+            <span class="check-count" id="check-count"></span>
+            <span class="check-arrow" aria-hidden="true">▾</span>
+          </button>
+          <ul class="check-list" id="check-list" hidden></ul>
+        </div>
         <div class="field">
           <span class="field-label">分类</span>
           <div class="chips" id="category-chips"></div>
@@ -250,6 +267,25 @@
       <div class="sheet-body table-body">
         <p class="theme-tip">先点进要编辑的单元格，再选下面的操作</p>
         <div class="table-grid" id="table-grid"></div>
+      </div>
+    </aside>
+
+    <!-- 片段库面板 -->
+    <div class="sheet-mask" id="snippet-mask" hidden></div>
+    <aside class="sheet" id="snippet-sheet" hidden aria-hidden="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <span>片段库</span>
+        <button class="icon-btn" id="snippet-close" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+      <div class="sheet-body snippet-body">
+        <p class="theme-tip">点一下插入到光标处，片段只保存在本机</p>
+        <div class="snippet-list" id="snippet-list"></div>
+        <button class="btn ghost snippet-add" id="snippet-add" type="button">新建片段（带选中文字）</button>
       </div>
     </aside>
 

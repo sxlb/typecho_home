@@ -1,6 +1,7 @@
 import Vditor from 'vditor';
 import 'vditor/dist/index.css';
 import { uploadImage } from './api.js';
+import { listSnippets, addSnippet, removeSnippet } from './local.js';
 
 let vditor = null;
 let currentCid = 0;
@@ -109,8 +110,22 @@ function openDialog({ title, confirmText = '插入', fields }) {
 }
 
 function insert(text) {
-  if (vditor && text) {
+  if (!vditor || !text) {
+    return;
+  }
+
+  try {
+    // 面板/工具栏点击会让编辑器失焦，先恢复焦点与选区
+    vditor.focus();
     vditor.insertValue(text);
+  } catch {
+    // 选区彻底丢失时 Vditor 会抛 IndexSizeError：内容已插入就跳过，否则追加到末尾
+    const current = vditor.getValue();
+
+    if (!current.includes(text.trim())) {
+      vditor.setValue(`${current.trimEnd()}\n${text}`, true);
+      notifyChange();
+    }
   }
 }
 
@@ -461,8 +476,9 @@ function closeSheet(sheetId, maskId) {
 export function closeEditorSheets() {
   const theme = closeSheet('theme-sheet', 'theme-mask');
   const table = closeSheet('table-sheet', 'table-mask');
+  const snippet = closeSheet('snippet-sheet', 'snippet-mask');
 
-  return theme || table;
+  return theme || table || snippet;
 }
 
 /* ─── 编辑模式即时切换（即时渲染 / 所见即所得 / 分屏预览） ── */
@@ -840,6 +856,133 @@ const TABLE_ICON =
 const CAMERA_ICON =
   '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" style="fill:none;stroke-width:1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.2"/></svg>';
 
+const SNIPPET_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" style="fill:none;stroke-width:1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5h11a1 1 0 0 1 1 1v16l-6.5-4.2L5.5 20.5v-16a1 1 0 0 1 1-1z"/></svg>';
+
+/* ─── 片段库（常用开头、声明、SEO 描述等，只存本机） ────── */
+
+let snippetSheetReady = false;
+
+function snippetPreview(text) {
+  return String(text || '')
+    .replace(/[#>*`|\-\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 90);
+}
+
+function renderSnippetList() {
+  const node = document.getElementById('snippet-list');
+
+  if (!node) {
+    return;
+  }
+
+  node.innerHTML = '';
+  const items = listSnippets();
+
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'snippet-empty';
+    empty.textContent = '还没有片段，点下方新建一条';
+    node.appendChild(empty);
+    return;
+  }
+
+  items.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'snippet-item';
+
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'snippet-info';
+
+    const name = document.createElement('div');
+    name.className = 'snippet-name';
+    name.textContent = item.name;
+
+    const preview = document.createElement('div');
+    preview.className = 'snippet-preview';
+    preview.textContent = snippetPreview(item.text);
+
+    pick.append(name, preview);
+    pick.addEventListener('click', () => {
+      closeSheet('snippet-sheet', 'snippet-mask');
+      insert(item.text.endsWith('\n') ? item.text : `${item.text}\n`);
+    });
+
+    // 两段式删除：先变成「确认」，再点一次才真正删除
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'snippet-del';
+    del.textContent = '×';
+    del.setAttribute('aria-label', '删除片段');
+    let armed = false;
+    del.addEventListener('click', () => {
+      if (!armed) {
+        armed = true;
+        del.textContent = '确认';
+        del.style.width = 'auto';
+        del.style.padding = '0 8px';
+        del.style.fontSize = '12px';
+        return;
+      }
+
+      removeSnippet(item.id);
+      renderSnippetList();
+    });
+
+    row.append(pick, del);
+    node.appendChild(row);
+  });
+}
+
+async function createSnippet() {
+  const value = await openDialog({
+    title: '新建片段',
+    confirmText: '保存',
+    fields: [
+      { key: 'name', label: '名称', placeholder: '例如：文末声明' },
+      {
+        key: 'text',
+        label: '内容',
+        type: 'textarea',
+        value: vditor?.getSelection()?.trim() || '',
+        placeholder: '支持 Markdown 与主题短代码',
+      },
+    ],
+  });
+
+  if (!value || !value.text) {
+    return;
+  }
+
+  addSnippet({ name: value.name, text: value.text });
+  renderSnippetList();
+}
+
+function ensureSnippetSheet() {
+  if (snippetSheetReady) {
+    return;
+  }
+
+  document.getElementById('snippet-close')?.addEventListener('click', () =>
+    closeSheet('snippet-sheet', 'snippet-mask'),
+  );
+  document.getElementById('snippet-mask')?.addEventListener('click', () =>
+    closeSheet('snippet-sheet', 'snippet-mask'),
+  );
+  document.getElementById('snippet-add')?.addEventListener('click', createSnippet);
+
+  snippetSheetReady = true;
+}
+
+function openSnippetSheet() {
+  ensureSnippetSheet();
+  renderSnippetList();
+  openSheet('snippet-sheet', 'snippet-mask');
+}
+
 /* ─── 编辑器 ────────────────────────────────────────────── */
 
 /**
@@ -860,6 +1003,8 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onMo
     value: value || '',
     height: '100%',
     cdn: `${import.meta.env.BASE_URL}vditor`,
+    // 深色模式由 main.js 写在 <html data-theme> 上，编辑器跟随
+    theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'classic',
     placeholder: '开始写点什么…',
     cache: { enable: false },
     counter: { enable: true },
@@ -884,6 +1029,7 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onMo
       { name: 'upload', tip: '上传图片' },
       { name: 'camera', tip: '拍照', icon: CAMERA_ICON, click: openCamera },
       { name: 'theme', tip: '主题元素', icon: THEME_ICON, click: openThemeSheet },
+      { name: 'snippets', tip: '片段库', icon: SNIPPET_ICON, click: openSnippetSheet },
       // 内置编辑模式切换：即时渲染 / 所见即所得 / 分屏预览，切换时保留正文
       { name: 'edit-mode', tip: '编辑模式' },
       { name: 'preview', tip: '预览' },
@@ -922,18 +1068,140 @@ function openCamera() {
   input.click();
 }
 
-async function uploadFiles(files) {
-  for (const file of files) {
-    try {
-      const result = await uploadImage(file, currentCid ? currentCid() : 0);
+/* ─── 图片上传：进度条 + 失败重试 ───────────────────────── */
 
-      if (vditor) {
-        vditor.insertValue(`\n![${result.name || '图片'}](${result.url})\n`);
-      }
-    } catch (error) {
-      errorHandler?.(error.message || '图片上传失败');
-    }
+const uploadState = { items: [], running: false };
+let uploadHideTimer = null;
+
+function ensureUploadBar() {
+  let bar = document.getElementById('upload-bar');
+
+  if (bar) {
+    return bar;
   }
+
+  bar = document.createElement('div');
+  bar.id = 'upload-bar';
+  bar.className = 'upload-bar';
+  bar.innerHTML = '<span class="upload-spinner"></span><span class="upload-text"></span>';
+  document.body.appendChild(bar);
+
+  return bar;
+}
+
+function hideUploadBar() {
+  clearTimeout(uploadHideTimer);
+  document.getElementById('upload-bar')?.remove();
+}
+
+function renderUploadBar() {
+  if (!uploadState.items.length && !uploadState.running) {
+    return;
+  }
+
+  const bar = ensureUploadBar();
+  const failed = uploadState.items.filter((item) => item.status === 'failed');
+  const index = uploadState.items.findIndex((item) => item.status === 'uploading');
+  const busy = uploadState.running;
+
+  bar.classList.toggle('failed', !busy && failed.length > 0);
+  bar.querySelector('.upload-spinner').hidden = !busy;
+
+  let text;
+
+  if (busy) {
+    text =
+      uploadState.items.length > 1
+        ? `正在上传 ${Math.min(index + 1, uploadState.items.length)}/${uploadState.items.length} 张…`
+        : '图片上传中…';
+  } else if (failed.length) {
+    text = `${failed.length} 张图片上传失败`;
+  } else {
+    text = `${uploadState.items.length} 张图片已插入`;
+  }
+
+  bar.querySelector('.upload-text').textContent = text;
+
+  let act = bar.querySelector('.upload-act');
+
+  if (!busy && failed.length) {
+    if (!act) {
+      act = document.createElement('button');
+      act.type = 'button';
+      act.className = 'upload-act';
+      bar.appendChild(act);
+    }
+
+    act.textContent = '重试';
+    act.onclick = () => {
+      clearTimeout(uploadHideTimer);
+      uploadState.items = failed.map((item) => ({ ...item, status: 'pending' }));
+      runUploadQueue();
+    };
+    return;
+  }
+
+  act?.remove();
+
+  if (!busy) {
+    clearTimeout(uploadHideTimer);
+    uploadHideTimer = setTimeout(hideUploadBar, 1600);
+  }
+}
+
+async function runUploadQueue() {
+  if (uploadState.running) {
+    return;
+  }
+
+  uploadState.running = true;
+
+  for (const item of uploadState.items) {
+    if (item.status !== 'pending') {
+      continue;
+    }
+
+    item.status = 'uploading';
+    renderUploadBar();
+
+    try {
+      const result = await uploadImage(item.file, currentCid ? currentCid() : 0);
+
+      insert(`\n![${result.name || '图片'}](${result.url})\n`);
+
+      item.status = 'done';
+    } catch (error) {
+      item.status = 'failed';
+      item.error = error.message || '图片上传失败';
+    }
+
+    renderUploadBar();
+  }
+
+  uploadState.running = false;
+
+  const failed = uploadState.items.filter((item) => item.status === 'failed');
+
+  if (!failed.length) {
+    // 给成功提示留一拍再清空
+    renderUploadBar();
+    uploadState.items = [];
+  } else {
+    renderUploadBar();
+    errorHandler?.(`${failed.length} 张图片上传失败，点底部提示条可重试`);
+  }
+}
+
+async function uploadFiles(files) {
+  if (!files.length) {
+    return;
+  }
+
+  files.forEach((file) => {
+    uploadState.items.push({ file, status: 'pending' });
+  });
+
+  await runUploadQueue();
 }
 
 export function getEditorValue() {
@@ -948,6 +1216,9 @@ export function setEditorValue(value) {
 
 export function destroyEditor() {
   closeEditorSheets();
+  hideUploadBar();
+  uploadState.items = [];
+  uploadState.running = false;
   changeHandler = null;
   modeHandler = null;
   activeTable = null;

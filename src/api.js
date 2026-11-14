@@ -12,6 +12,8 @@ export const DEFAULT_SETTINGS = {
   secret: '',
   // 编辑器模式：ir 即时渲染 / wysiwyg 所见即所得 / sv 分屏预览
   editorMode: 'ir',
+  // 外观：auto 跟随系统 / light 浅色 / dark 深色
+  theme: 'auto',
 };
 
 const SETTINGS_KEY = 'sxlb.settings';
