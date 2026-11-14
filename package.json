@@ -1,7 +1,7 @@
 {
   "name": "sxlb-writer",
   "private": true,
-  "version": "1.9.0",
+  "version": "2.0.0",
   "type": "module",
   "description": "凉薄博客安卓写作客户端",
   "scripts": {
