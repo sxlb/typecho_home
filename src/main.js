@@ -272,6 +272,9 @@ async function loadPosts({ reset = true } = {}) {
       renderList();
       el.listLoading.hidden = false;
       el.listLoading.textContent = '加载失败，下拉重试';
+    } else {
+      // 这一页没拉到，回退页号，下次「加载更多」重试同一页
+      state.page = Math.max(1, state.page - 1);
     }
 
     // 保留重试机会
