@@ -64,7 +64,7 @@ class Action extends Widget implements ActionInterface
         $this->sendCors();
 
         if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
-            http_response_code(204);
+            $this->setStatus(204);
             exit;
         }
 
@@ -555,10 +555,25 @@ class Action extends Widget implements ActionInterface
      */
     private function json($payload, int $status)
     {
-        http_response_code($status);
+        $this->setStatus($status);
         header('Content-Type: application/json; charset=UTF-8');
         echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
+    }
+
+    /**
+     * 设置响应状态码
+     *
+     * Typecho 1.3 在输出缓冲回收时由 \Typecho\Response 单例统一发送响应头，
+     * 会把原生 http_response_code() 的结果覆盖回 200，因此必须同时写入该实例。
+     */
+    private function setStatus(int $status): void
+    {
+        if (class_exists(\Typecho\Response::class)) {
+            \Typecho\Response::getInstance()->setStatus($status);
+        }
+
+        http_response_code($status);
     }
 
     private function sendCors()
