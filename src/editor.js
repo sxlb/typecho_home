@@ -518,8 +518,11 @@ function openThemeSheet() {
 
 /* ─── 表格删除（插入沿用 Vditor 原生表格按钮） ─────────── */
 
-function getIrRoot() {
-  return document.querySelector('#editor .vditor-ir');
+function getEditorRoot() {
+  return (
+    document.querySelector('#editor .vditor-ir') ||
+    document.querySelector('#editor .vditor-wysiwyg')
+  );
 }
 
 let activeTable = null;
@@ -532,7 +535,7 @@ function liveCell() {
     return null;
   }
 
-  const root = getIrRoot();
+  const root = getEditorRoot();
   let node = selection.anchorNode;
 
   while (node && node !== root) {
@@ -583,7 +586,9 @@ function deleteCurrentTable() {
     return;
   }
 
-  const tables = Array.from(document.querySelectorAll('#editor .vditor-ir table'));
+  const tables = Array.from(
+    document.querySelectorAll('#editor .vditor-ir table, #editor .vditor-wysiwyg table'),
+  );
   const index = tables.indexOf(table);
   const lines = getEditorValue().split('\n');
 
@@ -680,7 +685,9 @@ function restoreCellRange() {
  * @returns {boolean} Vditor 是否处理了该事件
  */
 function dispatchTableHotkey({ key, shift, code }) {
-  const target = document.querySelector('#editor .vditor-ir .vditor-reset');
+  const target = document.querySelector(
+    '#editor .vditor-ir .vditor-reset, #editor .vditor-wysiwyg .vditor-reset',
+  );
 
   if (!target) {
     return false;
@@ -794,19 +801,22 @@ const CAMERA_ICON =
 /* ─── 编辑器 ────────────────────────────────────────────── */
 
 /**
- * 初始化 Vditor（即时渲染，工具栏对齐 Handsome 主题后台编辑器）
+ * 初始化 Vditor（工具栏对齐 Handsome 主题后台编辑器）
  *
- * @param {{value: string, onChange: (value: string) => void, getCid: () => number, onError: (message: string) => void}} options
+ * @param {{value: string, mode?: 'ir'|'wysiwyg'|'sv', onChange: (value: string) => void, getCid: () => number, onError: (message: string) => void}} options
  */
-export function initEditor({ value, onChange, getCid, onError }) {
+export function initEditor({ value, mode = 'ir', onChange, getCid, onError }) {
   destroyEditor();
 
   currentCid = getCid;
   errorHandler = onError;
   changeHandler = onChange;
 
+  // 分屏预览是纯 markdown + 预览，表格结构直接改源码即可，不需要操作面板
+  const isSv = mode === 'sv';
+
   vditor = new Vditor('editor', {
-    mode: 'ir',
+    mode,
     value: value || '',
     height: '100%',
     cdn: `${import.meta.env.BASE_URL}vditor`,
@@ -830,7 +840,7 @@ export function initEditor({ value, onChange, getCid, onError }) {
       { name: 'link', tip: '链接' },
       // 表格插入沿用 Vditor 原生按钮（带行列选择），旁边是结构操作面板
       { name: 'table', tip: '表格' },
-      { name: 'tableops', tip: '表格操作', icon: TABLE_ICON, click: openTableSheet },
+      ...(isSv ? [] : [{ name: 'tableops', tip: '表格操作', icon: TABLE_ICON, click: openTableSheet }]),
       { name: 'upload', tip: '上传图片' },
       { name: 'camera', tip: '拍照', icon: CAMERA_ICON, click: openCamera },
       { name: 'theme', tip: '主题元素', icon: THEME_ICON, click: openThemeSheet },

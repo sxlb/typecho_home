@@ -56,6 +56,7 @@ const el = {
     server: $('#set-server'),
     token: $('#set-token'),
     secret: $('#set-secret'),
+    mode: $('#set-editor-mode'),
   },
 };
 
@@ -510,6 +511,7 @@ function startEditor({ cid, draftKey, title, text, meta }) {
 
   initEditor({
     value: text || '',
+    mode: getSettings().editorMode,
     onChange: () => {
       state.dirty = true;
       el.editorStatus.textContent = '编辑中…';
@@ -868,6 +870,7 @@ function openSettings() {
   el.settings.server.value = settings.server || DEFAULT_SETTINGS.server;
   el.settings.token.value = settings.token || '';
   el.settings.secret.value = settings.secret || '';
+  el.settings.mode.value = settings.editorMode || DEFAULT_SETTINGS.editorMode;
   renderVersion();
   show('settings');
 }
@@ -900,6 +903,7 @@ function saveSettingsFromForm() {
     server: el.settings.server.value.trim() || DEFAULT_SETTINGS.server,
     token: el.settings.token.value.trim(),
     secret: el.settings.secret.value.trim(),
+    editorMode: el.settings.mode.value || DEFAULT_SETTINGS.editorMode,
   });
 }
 

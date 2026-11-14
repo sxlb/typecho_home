@@ -10,6 +10,8 @@ export const DEFAULT_SETTINGS = {
   server: 'https://blog.sxlb.xyz',
   token: '',
   secret: '',
+  // 编辑器模式：ir 即时渲染 / wysiwyg 所见即所得 / sv 分屏预览
+  editorMode: 'ir',
 };
 
 const SETTINGS_KEY = 'sxlb.settings';

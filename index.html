@@ -106,6 +106,14 @@
             <span class="field-label">Secret</span>
             <input id="set-secret" type="text" placeholder="HMAC 密钥" autocomplete="off" />
           </label>
+          <label class="field">
+            <span class="field-label">编辑器模式</span>
+            <select id="set-editor-mode">
+              <option value="ir">即时渲染（推荐，边写边渲染）</option>
+              <option value="wysiwyg">所见即所得（更像 Word，表格可视化编辑）</option>
+              <option value="sv">分屏预览（左边源码，右边效果）</option>
+            </select>
+          </label>
           <div class="settings-actions">
             <button class="btn ghost" id="btn-test">测试连接</button>
             <button class="btn primary" id="btn-save-settings">保存设置</button>
@@ -115,7 +123,8 @@
             <button class="btn ghost small" id="btn-check-update">检查更新</button>
           </div>
           <p class="settings-hint">
-            Token 与 Secret 在博客后台「插件 → SxlbPublisher 设置」中查看。密钥只保存在本机。
+            Token 与 Secret 在博客后台「插件 → SxlbPublisher 设置」中查看。密钥只保存在本机。<br />
+            编辑器模式保存后，重新打开文章生效。即时渲染最省性能；所见即所得的表格可直接可视化编辑；分屏预览适合改源码。
           </p>
         </main>
       </section>
