@@ -1,6 +1,6 @@
 import './ui.css';
 import { call, uploadImage, getSettings, saveSettings, isConfigured, DEFAULT_SETTINGS } from './api.js';
-import { initEditor, getEditorValue, setEditorValue, destroyEditor } from './editor.js';
+import { initEditor, getEditorValue, setEditorValue, destroyEditor, closeThemeSheet } from './editor.js';
 import {
   newDraftId,
   readDraft,
@@ -48,6 +48,7 @@ const el = {
   itemMask: $('#item-mask'),
   itemTitle: $('#item-sheet-title'),
   itemActions: $('#item-actions'),
+  dialog: $('#dialog'),
   appVersion: $('#app-version'),
   toast: $('#toast'),
   settings: {
@@ -995,7 +996,11 @@ function bind() {
   // 安卓物理返回键
   if (window.Capacitor?.isNativePlatform?.()) {
     App.addListener('backButton', () => {
-      if (!el.itemSheet.hidden) {
+      if (!el.dialog.hidden) {
+        $('#dialog-cancel').click();
+      } else if (closeThemeSheet()) {
+        // 主题元素面板已关闭
+      } else if (!el.itemSheet.hidden) {
         closeItemSheet();
       } else if (!el.historySheet.hidden) {
         hideSheet(el.historySheet, el.historyMask);

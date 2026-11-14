@@ -74,9 +74,17 @@ function openDialog({ title, confirmText = '插入', fields }) {
 
     const close = (result) => {
       root.hidden = true;
+      root.onclick = null;
       okBtn.onclick = null;
       cancelBtn.onclick = null;
       resolve(result);
+    };
+
+    // 点击遮罩空白处等同取消
+    root.onclick = (event) => {
+      if (event.target === root) {
+        close(null);
+      }
     };
 
     okBtn.onclick = () => {
@@ -330,53 +338,154 @@ async function insertCollapse() {
   insert(`[collapse status="${value.status}" title="${value.title}"]${value.content}[/collapse]`);
 }
 
-const SHORTCODES = [
+/* ─── 主题元素面板（替代 Vditor 子菜单，避免被工具栏裁剪） ── */
+
+const THEME_ITEMS = [
+  { glyph: '图', label: '图片', run: insertImage },
+  { glyph: '乐', label: '音乐', run: insertMusic },
+  { glyph: '影', label: '视频', run: insertVideo },
   {
-    name: 'sc_tabs',
-    tip: '插入标签页',
-    icon: textIcon('标签页'),
-    click: () =>
+    glyph: '册',
+    label: '相册',
+    run: () =>
+      insert(
+        '[album type="photos"]\n[这里插入图片，支持 markdown 或 html，可混排](https://)\n[/album]',
+      ),
+  },
+  { glyph: '彩', label: '彩色文字', run: insertColorWord },
+  { glyph: '引', label: '高亮引用', run: insertScode },
+  { glyph: '折', label: '收缩框', run: insertCollapse },
+  { glyph: '钮', label: '按钮', run: insertButton },
+  {
+    glyph: '页',
+    label: '标签页',
+    run: () =>
       insert(
         '[tabs]\n[tab name="标签页 1" active="true"]内容 1[/tab]\n[tab name="标签页 2"]内容 2[/tab]\n[/tabs]',
       ),
   },
   {
-    name: 'sc_album',
-    tip: '插入相册',
-    icon: textIcon('相册'),
-    click: () =>
-      insert(
-        '[album type="photos"]\n[这里插入图片，支持 markdown 或 html，可混排](https://)\n[/album]',
-      ),
-  },
-  {
-    name: 'sc_timeline',
-    tip: '插入时间线',
-    icon: textIcon('时间线'),
-    click: () =>
+    glyph: '线',
+    label: '时间线',
+    run: () =>
       insert(
         '[timeline title="请输入标题" type="small"]\n[item date="2026-01-01"] 这里编辑事件内容 [/item]\n[/timeline]',
       ),
   },
   {
-    name: 'sc_goal',
-    tip: '插入计划表',
-    icon: textIcon('计划表'),
-    click: () => insert('[goal title="小目标"]\n[item check="true"] 已完成的任务 [/item]\n[item progress="50%"] 进行中的任务 [/item]\n[/goal]'),
+    glyph: '划',
+    label: '计划表',
+    run: () =>
+      insert(
+        '[goal title="小目标"]\n[item check="true"] 已完成的任务 [/item]\n[item progress="50%"] 进行中的任务 [/item]\n[/goal]',
+      ),
   },
   {
-    name: 'sc_column',
-    tip: '插入多列布局',
-    icon: textIcon('多列'),
-    click: () =>
+    glyph: '列',
+    label: '多列布局',
+    run: () =>
       insert(
         '[column]\n[block] 普通的一列 [/block]\n[block size="20%"]该列宽度 20%[/block]\n[/column]',
       ),
   },
+  { glyph: '卡', label: '文章卡片', run: insertPost },
+  {
+    glyph: '评',
+    label: '评论可见',
+    run: () => insert(`[hide]${selected('这里编辑隐藏文本（评论可见）')}[/hide]`),
+  },
+  {
+    glyph: '登',
+    label: '登录可见',
+    run: () => insert(`[login]${selected('这里编辑隐藏文本（登录可见）')}[/login]`),
+  },
 ];
 
-function textIcon(label) {
-  return `<span class="tb-text">${label}</span>`;
+const THEME_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>';
+
+let themeGridReady = false;
+
+function ensureThemeGrid() {
+  if (themeGridReady) {
+    return;
+  }
+
+  const grid = document.getElementById('theme-grid');
+
+  if (!grid) {
+    return;
+  }
+
+  THEME_ITEMS.forEach((item) => {
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'theme-cell';
+
+    const glyph = document.createElement('span');
+    glyph.className = 'theme-glyph';
+    glyph.textContent = item.glyph;
+
+    const label = document.createElement('span');
+    label.textContent = item.label;
+    label.className = 'theme-label';
+
+    cell.append(glyph, label);
+    cell.addEventListener('click', () => {
+      closeThemeSheet();
+      item.run();
+    });
+
+    grid.appendChild(cell);
+  });
+
+  document.getElementById('theme-close')?.addEventListener('click', () => closeThemeSheet());
+  document.getElementById('theme-mask')?.addEventListener('click', () => closeThemeSheet());
+
+  themeGridReady = true;
+}
+
+function openThemeSheet() {
+  ensureThemeGrid();
+
+  const sheet = document.getElementById('theme-sheet');
+  const mask = document.getElementById('theme-mask');
+
+  if (!sheet || !mask) {
+    return;
+  }
+
+  sheet.hidden = false;
+  mask.hidden = false;
+
+  requestAnimationFrame(() => {
+    sheet.classList.add('open');
+    mask.classList.add('open');
+  });
+}
+
+/**
+ * 关闭主题元素面板
+ *
+ * @returns {boolean} 面板原本是否处于打开状态（供安卓返回键判断）
+ */
+export function closeThemeSheet() {
+  const sheet = document.getElementById('theme-sheet');
+  const mask = document.getElementById('theme-mask');
+
+  if (!sheet || sheet.hidden) {
+    return false;
+  }
+
+  sheet.classList.remove('open');
+  mask.classList.remove('open');
+
+  setTimeout(() => {
+    sheet.hidden = true;
+    mask.hidden = true;
+  }, 260);
+
+  return true;
 }
 
 const CAMERA_ICON =
@@ -417,48 +526,15 @@ export function initEditor({ value, onChange, getCid, onError }) {
       { name: 'quote', tip: '引用' },
       { name: 'inline-code', tip: '行内代码' },
       { name: 'code', tip: '代码块' },
-      '|',
       { name: 'link', tip: '链接' },
       { name: 'table', tip: '表格' },
       { name: 'upload', tip: '上传图片' },
       { name: 'camera', tip: '拍照', icon: CAMERA_ICON, click: openCamera },
+      { name: 'theme', tip: '主题元素', icon: THEME_ICON, click: openThemeSheet },
+      { name: 'preview', tip: '预览' },
       '|',
       { name: 'undo', tip: '撤销' },
       { name: 'redo', tip: '重做' },
-      '|',
-      {
-        name: 'more',
-        tip: '主题元素',
-        toolbar: [
-          { name: 'insert_image', tip: '插入图片', icon: textIcon('图片'), click: insertImage },
-          { name: 'insert_color', tip: '彩色文字', icon: textIcon('彩色文字'), click: insertColorWord },
-          { name: 'insert_music', tip: '插入音乐', icon: textIcon('音乐'), click: insertMusic },
-          { name: 'insert_video', tip: '插入视频', icon: textIcon('视频'), click: insertVideo },
-          { name: 'insert_post', tip: '插入文章卡片', icon: textIcon('文章卡片'), click: insertPost },
-          { name: 'insert_button', tip: '插入按钮', icon: textIcon('按钮'), click: insertButton },
-          { name: 'insert_scode', tip: '高亮引用', icon: textIcon('高亮引用'), click: insertScode },
-          { name: 'insert_collapse', tip: '收缩框', icon: textIcon('收缩框'), click: insertCollapse },
-          {
-            name: 'sc_hide',
-            tip: '评论可见',
-            icon: textIcon('评论可见'),
-            click: () => insert(`[hide]${selected('这里编辑隐藏文本（评论可见）')}[/hide]`),
-          },
-          {
-            name: 'sc_login',
-            tip: '登录可见',
-            icon: textIcon('登录可见'),
-            click: () => insert(`[login]${selected('这里编辑隐藏文本（登录可见）')}[/login]`),
-          },
-          ...SHORTCODES,
-          { name: 'outline', tip: '大纲' },
-          { name: 'preview', tip: '预览' },
-          { name: 'both', tip: '双栏预览' },
-          { name: 'fullscreen', tip: '全屏' },
-          { name: 'edit-mode', tip: '切换模式' },
-          { name: 'export', tip: '导出' },
-        ],
-      },
     ],
     preview: {
       hljs: { enable: true, style: 'monokai', lineNumber: true },
@@ -514,6 +590,8 @@ export function setEditorValue(value) {
 }
 
 export function destroyEditor() {
+  closeThemeSheet();
+
   if (vditor) {
     vditor.destroy();
     vditor = null;

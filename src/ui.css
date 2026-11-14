@@ -768,31 +768,122 @@ body {
 
 /* ─── 工具栏适配 ───────────────────────────────────────── */
 
+/*
+ * 关键：不要给工具栏加 overflow，否则 Vditor 的下拉面板（标题、表格等）
+ * 会被裁剪，表现为“点了没反应”。flow-root 只包含浮动，不产生裁剪。
+ */
 #editor .vditor-toolbar {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
+  display: flow-root;
+  padding: 4px 6px 6px;
 }
 
-#editor .vditor-toolbar::-webkit-scrollbar {
-  height: 0;
+#editor .vditor-toolbar__item {
+  padding: 0 1px;
 }
 
-#editor .vditor-toolbar .vditor-toolbar__item {
-  flex: 0 0 auto;
+#editor .vditor-toolbar__item .vditor-tooltipped {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 9px;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-#editor .tb-text {
-  font-size: 12px;
-  white-space: nowrap;
-  letter-spacing: 0.02em;
+#editor .vditor-toolbar__item .vditor-tooltipped:active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+#editor .vditor-toolbar__item svg {
+  width: 17px;
+  height: 17px;
+}
+
+#editor .vditor-toolbar__item > input {
+  width: 34px;
+  height: 34px;
+}
+
+#editor .vditor-toolbar__divider {
+  height: 16px;
+  margin: 9px 5px;
+}
+
+/* 下拉面板的触控尺寸 */
+#editor .vditor-hint button {
+  padding: 9px 14px;
+  font-size: 13px;
+}
+
+/* 触屏设备不显示悬浮提示，避免点击后残留浮层遮挡内容 */
+@media (hover: none) {
+  #editor .vditor-tooltipped::before,
+  #editor .vditor-tooltipped::after {
+    display: none !important;
+  }
 }
 
 #editor .vditor-counter {
+  margin-top: 10px;
   font-size: 11px;
   color: var(--ink-3);
+  background: transparent;
+}
+
+/* ─── 主题元素面板 ─────────────────────────────────────── */
+
+.theme-body {
+  padding: 4px 20px calc(22px + env(safe-area-inset-bottom));
+}
+
+.theme-tip {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.theme-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
   background: var(--bg);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+
+.theme-cell:active {
+  background: var(--accent-soft);
+  border-color: rgba(31, 111, 92, 0.3);
+  transform: scale(0.97);
+}
+
+.theme-glyph {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .toast {
