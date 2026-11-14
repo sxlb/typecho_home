@@ -44,7 +44,7 @@ class Post
      *
      * @return array{items: array, total: int, page: int, size: int}
      */
-    public static function listing(Db $db, int $page, int $size, string $status): array
+    public static function listing(Db $db, int $page, int $size, string $status, string $keyword = ''): array
     {
         $type = $status === 'draft' ? 'post_draft' : ($status === 'publish' ? 'post' : null);
 
@@ -56,6 +56,15 @@ class Post
 
         self::applyTypeFilter($countQuery, $type);
         self::applyTypeFilter($rowsQuery, $type);
+
+        $keyword = trim($keyword);
+
+        if ($keyword !== '') {
+            // 转义 LIKE 通配符，避免用户输入的 % _ 被当成模式
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $keyword) . '%';
+            $countQuery->where('table.contents.title LIKE ?', $like);
+            $rowsQuery->where('table.contents.title LIKE ?', $like);
+        }
 
         $total = (int) $db->fetchObject($countQuery)->num;
         $now = time();
@@ -102,6 +111,7 @@ class Post
             'title' => htmlspecialchars_decode((string) $row['title'], ENT_QUOTES),
             'text' => $text,
             'slug' => (string) $row['slug'],
+            'url' => self::permalink($row),
             'created' => (int) $row['created'],
             'modified' => (int) $row['modified'],
             'status' => $row['type'] === 'post_draft' ? 'draft' : 'publish',
@@ -109,6 +119,25 @@ class Post
             'tags' => implode(',', self::tagNames($db, $cid)),
             'fields' => self::fields($db, $cid),
         ];
+    }
+
+    /**
+     * 按 Typecho 的永久链接规则生成完整地址
+     *
+     * 不能直接用 slug 拼接：博客可能配置为 /archives/{cid}/ 或带分类、日期的规则。
+     * 草稿返回空串。
+     */
+    private static function permalink(array $row): string
+    {
+        if ($row['type'] === 'post_draft') {
+            return '';
+        }
+
+        /** @var PostEdit $edit */
+        $edit = Widget::widget(PostEdit::class, null, ['cid' => (int) $row['cid']]);
+        $edit->push($row);
+
+        return (string) $edit->permalink;
     }
 
     /**

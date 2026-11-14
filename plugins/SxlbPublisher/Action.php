@@ -118,7 +118,7 @@ class Action extends Widget implements ActionInterface
                     $this->fail('未知接口: ' . $action, 404);
             }
         } catch (\Throwable $e) {
-            $this->fail($e->getMessage(), 500);
+            $this->fail($this->safeMessage($e), 500);
         }
     }
 
@@ -152,7 +152,9 @@ class Action extends Widget implements ActionInterface
 
         $raw = $this->readRawBody();
         $path = '/writer-api/' . $action . ($sub !== '' ? '/' . $sub : '');
-        $message = $ts . "\n" . $path . "\n" . $raw;
+        $query = (string) ($_SERVER['QUERY_STRING'] ?? '');
+        // query 一并纳入签名，避免鉴权通过后篡改 page / status / cid 等参数
+        $message = $ts . "\n" . $path . ($query !== '' ? '?' . $query : '') . "\n" . $raw;
         $expected = hash_hmac('sha256', $message, $secret);
 
         if (!hash_equals($expected, strtolower($sign)) || !hash_equals($expectedToken, $token)) {
@@ -191,6 +193,23 @@ class Action extends Widget implements ActionInterface
         }
 
         return $raw;
+    }
+
+    /**
+     * 生成可返回给客户端的错误信息
+     *
+     * 插件主动抛出的 RuntimeException 视为业务提示，可直接展示；
+     * 数据库异常与其它运行时异常写入站点日志，对外只返回通用文案，避免泄露 SQL 与路径。
+     */
+    private function safeMessage(\Throwable $e): string
+    {
+        if ($e instanceof \RuntimeException && !($e instanceof \Typecho\Db\Exception)) {
+            return $e->getMessage();
+        }
+
+        error_log('[SxlbPublisher] ' . get_class($e) . ': ' . $e->getMessage());
+
+        return '服务器内部错误，请查看站点错误日志';
     }
 
     /**
@@ -233,7 +252,8 @@ class Action extends Widget implements ActionInterface
             Db::get(),
             max(1, $this->intParam('page', 1)),
             min(50, max(1, $this->intParam('size', 20))),
-            (string) $this->param('status', '')
+            (string) $this->param('status', ''),
+            (string) $this->param('keyword', '')
         );
 
         $this->ok($goods);
@@ -288,6 +308,8 @@ class Action extends Widget implements ActionInterface
 
     private function meta()
     {
+        $this->requirePost('meta');
+
         $name = trim((string) $this->param('name', ''));
         $type = (string) $this->param('type', 'tag');
 
@@ -304,6 +326,8 @@ class Action extends Widget implements ActionInterface
 
     private function delete()
     {
+        $this->requirePost('delete');
+
         $cid = $this->intParam('cid');
 
         if ($cid <= 0) {
@@ -322,6 +346,8 @@ class Action extends Widget implements ActionInterface
 
     private function summary()
     {
+        $this->requirePost('summary');
+
         $cid = $this->intParam('cid');
         $force = (bool) $this->param('force', false);
 
@@ -343,7 +369,7 @@ class Action extends Widget implements ActionInterface
         $this->ok([
             'cid' => $cid,
             'generated' => (bool) $generated,
-            'summary' => $row['str_value'] ?? '',
+            'summary' => $row ? (string) $row['str_value'] : '',
         ]);
     }
 
@@ -359,6 +385,10 @@ class Action extends Widget implements ActionInterface
         switch ($sub) {
             case 'overview':
                 $this->ok(Admin::overview(Db::get()));
+                break;
+            case 'metas':
+                // 管理工具页的分类 / 标签列表（写作接口的 metas 不带管理开关校验）
+                $this->ok(Meta::listing(Db::get(), ''));
                 break;
             case 'plugins':
                 $this->ok(Admin::plugins());

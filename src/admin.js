@@ -433,7 +433,7 @@ function renderToolFilters() {
 
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = 'image/*';
+  // 不写死 accept：服务端按后台「允许上传类型」白名单校验，这里放开由服务端把关
   input.hidden = true;
 
   const button = toolButton('上传文件', 'primary', () => input.click());
@@ -442,6 +442,13 @@ function renderToolFilters() {
     const file = input.files && input.files[0];
 
     if (!file) {
+      return;
+    }
+
+    // 非图片不做前端压缩，超过常见 2M 上传上限时提前提示，避免白传一趟
+    if (!/^image\//.test(file.type) && file.size > 2 * 1024 * 1024) {
+      input.value = '';
+      toast('文件超过 2M，可能超出服务器上传限制');
       return;
     }
 
@@ -570,14 +577,38 @@ function renderMetaForm() {
   const slugField = fieldInput('Slug', draft.slug || '', '留空自动生成');
   const orderField = fieldInput('排序', String(draft.order || 0), '', 'number');
 
+  // 输入实时同步回草稿：列表重建（如加载更多）时不会丢掉已填内容
+  nameField.input.addEventListener('input', () => {
+    draft.name = nameField.input.value;
+  });
+  slugField.input.addEventListener('input', () => {
+    draft.slug = slugField.input.value;
+  });
+  orderField.input.addEventListener('input', () => {
+    draft.order = Number(orderField.input.value || 0);
+  });
+
   row.append(title, nameField.wrap, slugField.wrap, orderField.wrap);
 
   let descriptionField = null;
 
   if (isCategory) {
     descriptionField = fieldInput('描述', draft.description || '', '', 'textarea');
+    descriptionField.input.addEventListener('input', () => {
+      draft.description = descriptionField.input.value;
+    });
     row.appendChild(descriptionField.wrap);
-    row.appendChild(parentSelect(draft));
+
+    const parent = parentSelect(draft);
+    const parentSelectEl = parent.querySelector('[data-parent]');
+
+    if (parentSelectEl) {
+      parentSelectEl.addEventListener('change', () => {
+        draft.parent = Number(parentSelectEl.value || 0);
+      });
+    }
+
+    row.appendChild(parent);
   }
 
   const actions = document.createElement('div');
@@ -675,8 +706,28 @@ function parentSelect(draft) {
   select.appendChild(top);
 
   const tool = state.tool;
+  // 排除自己与所有子孙分类：选中它们会把分类树接成环
+  const blocked = new Set();
+
+  if (draft.mid) {
+    blocked.add(draft.mid);
+
+    let changed = true;
+
+    while (changed) {
+      changed = false;
+
+      tool.categories.forEach((item) => {
+        if (!blocked.has(item.mid) && blocked.has(item.parent)) {
+          blocked.add(item.mid);
+          changed = true;
+        }
+      });
+    }
+  }
+
   tool.categories.forEach((item) => {
-    if (item.mid === draft.mid) {
+    if (blocked.has(item.mid)) {
       return;
     }
 

@@ -8,6 +8,8 @@ let currentCid = 0;
 let errorHandler = null;
 let changeHandler = null;
 let modeHandler = null;
+// 当前未结算的弹窗 resolve：重复打开时先按取消结算，避免旧 Promise 永远挂起
+let dialogResolve = null;
 
 /* ─── 通用输入弹窗 ──────────────────────────────────────── */
 
@@ -19,6 +21,12 @@ let modeHandler = null;
  */
 function openDialog({ title, confirmText = '插入', fields }) {
   return new Promise((resolve) => {
+    if (dialogResolve) {
+      const previous = dialogResolve;
+      dialogResolve = null;
+      previous(null);
+    }
+
     const root = document.getElementById('dialog');
 
     if (!root) {
@@ -80,6 +88,11 @@ function openDialog({ title, confirmText = '插入', fields }) {
       root.onclick = null;
       okBtn.onclick = null;
       cancelBtn.onclick = null;
+
+      if (dialogResolve === resolve) {
+        dialogResolve = null;
+      }
+
       resolve(result);
     };
 
@@ -100,6 +113,7 @@ function openDialog({ title, confirmText = '插入', fields }) {
 
     cancelBtn.onclick = () => close(null);
 
+    dialogResolve = resolve;
     root.hidden = false;
 
     const first = Object.values(inputs)[0];
@@ -864,15 +878,25 @@ function deleteCurrentTable() {
     blocks.push([start, lines.length - 1]);
   }
 
-  if (index < 0 || index >= blocks.length) {
+  const matched = matchTableBlock(table, blocks, lines);
+  const block = matched ?? (index >= 0 && index < blocks.length ? blocks[index] : null);
+
+  if (!block) {
     errorHandler?.('没定位到表格，请重新点一下表格再删');
     return;
   }
 
-  const [from, to] = blocks[index];
+  const [from, to] = block;
   lines.splice(from, to - from + 1);
 
-  const text = lines.join('\n').replace(/\n{3,}/g, '\n\n').replace(/^\n+/, '');
+  // 表格两侧原本各有一个空行，删除后会在接缝处留下连续空行；
+  // 只合并接缝，保留正文其它位置刻意的留白
+  while (from > 0 && from < lines.length
+    && lines[from - 1].trim() === '' && lines[from].trim() === '') {
+    lines.splice(from, 1);
+  }
+
+  const text = lines.join('\n').replace(/^\n+/, '');
 
   if (vditor) {
     // 不清空撤销栈，删错了还能撤销
@@ -882,6 +906,46 @@ function deleteCurrentTable() {
   activeTable = null;
   savedRange = null;
   notifyChange();
+}
+
+/**
+ * 用首行文本匹配 markdown 表格块，纠正「DOM 表格序号 ≠ markdown 块序号」的错位
+ *
+ * @returns {[number, number] | null} 唯一匹配时返回块的行号范围
+ */
+function matchTableBlock(table, blocks, lines) {
+  const row = table.querySelector('tr');
+
+  if (!row) {
+    return null;
+  }
+
+  const wanted = Array.from(row.children)
+    .map((cell) => normalizeCell(cell.textContent))
+    .join('|');
+
+  if (!wanted.replace(/\|/g, '')) {
+    return null;
+  }
+
+  const matched = blocks.filter(([from]) => {
+    const cells = lines[from].trim().replace(/^\||\|$/g, '').split('|');
+
+    return cells.map(normalizeCell).join('|') === wanted;
+  });
+
+  return matched.length === 1 ? matched[0] : null;
+}
+
+/**
+ * 去掉 markdown 装饰，仅保留可比较的纯文本
+ */
+function normalizeCell(text) {
+  return String(text || '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`~\\]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /* ─── 表格结构操作（借用 Vditor 内置快捷键，避免自己改 DOM） ── */

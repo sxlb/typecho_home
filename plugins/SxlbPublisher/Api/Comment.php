@@ -27,7 +27,10 @@ class Comment
     {
         $filter = self::normalizeStatus($status);
 
-        $countQuery = $db->select(['COUNT(table.comments.coid)' => 'num'])->from('table.comments');
+        // 统计与列表保持同一口径：都关联 contents，孤儿评论不计入
+        $countQuery = $db->select(['COUNT(table.comments.coid)' => 'num'])
+            ->from('table.comments')
+            ->join('table.contents', 'table.contents.cid = table.comments.cid');
         $rowsQuery = $db->select(
             'table.comments.coid',
             'table.comments.cid',

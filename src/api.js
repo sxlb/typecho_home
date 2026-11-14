@@ -32,7 +32,13 @@ export function getSettings() {
 }
 
 export function saveSettings(settings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    return true;
+  } catch {
+    // 存储已满时设置无法落盘，调用方可通过返回值提示
+    return false;
+  }
 }
 
 export function isConfigured(settings = getSettings()) {
@@ -115,21 +121,25 @@ async function send(url, options, path, rawBody) {
 /**
  * 调用接口
  *
+ * 签名路径包含 query 串（与服务端 $_SERVER['QUERY_STRING'] 逐字节一致），
+ * 否则鉴权通过后仍可篡改 page / status / cid 等参数。
+ *
  * @param {string} action ping / posts / post / save ...
  * @param {{method?: string, query?: Record<string, unknown>, body?: object}} options
  */
 export async function call(action, options = {}) {
   const settings = getSettings();
-  const signPath = `/writer-api/${action}`;
+  const path = `/writer-api/${action}`;
   const query = options.query
     ? new URLSearchParams(
         Object.entries(options.query).filter(([, value]) => value !== undefined && value !== null),
       ).toString()
     : '';
+  const signPath = query ? `${path}?${query}` : path;
   const rawBody = options.body ? JSON.stringify(options.body) : '';
 
   return send(
-    baseUrl(settings.server) + signPath + (query ? `?${query}` : ''),
+    baseUrl(settings.server) + signPath,
     {
       method: options.method || 'GET',
       headers: rawBody ? { 'Content-Type': 'application/json' } : {},

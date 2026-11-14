@@ -159,6 +159,27 @@ class Meta
                 if (!$exists) {
                     throw new \RuntimeException('父分类不存在');
                 }
+
+                // 沿父级链向上回溯，防止把父分类设成自己的子孙（分类树成环）
+                if ($mid > 0) {
+                    $cursor = $parent;
+                    $visited = [];
+
+                    while ($cursor > 0 && !isset($visited[$cursor])) {
+                        if ($cursor === $mid) {
+                            throw new \RuntimeException('不能把子孙分类设为父分类');
+                        }
+
+                        $visited[$cursor] = true;
+
+                        $up = $db->fetchRow(
+                            $db->select('parent')->from('table.metas')
+                                ->where('mid = ?', $cursor)->limit(1)
+                        );
+
+                        $cursor = $up ? (int) $up['parent'] : 0;
+                    }
+                }
             }
         }
 

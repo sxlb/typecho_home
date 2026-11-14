@@ -49,6 +49,12 @@ class PostEdit extends \Widget\Contents\Post\Edit
             $prev = $this->db->fetchRow(
                 $this->db->select('type', 'status')->from('table.contents')->where('cid = ?', $cid)
             );
+
+            // 文章已被删除（或在别处被彻底移除）时直接失败，
+            // 否则 update 影响 0 行也会「成功」，继续写入分类/标签/字段产生孤立数据
+            if (!$prev) {
+                throw new \RuntimeException('文章不存在或已被删除');
+            }
         }
 
         if ($cid > 0) {

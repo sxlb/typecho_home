@@ -21,8 +21,37 @@ function readJson(key) {
   }
 }
 
+/**
+ * 写入 localStorage，配额溢出时返回 false 而不是抛出
+ */
+function safeSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    console.warn('[sxlb] 本地存储写入失败', error);
+    return false;
+  }
+}
+
 export function readDraft(key) {
   return readJson(DRAFT_PREFIX + key);
+}
+
+/**
+ * 比较草稿内容是否一致（忽略 updatedAt）
+ */
+function sameContent(a, b) {
+  const fields = ['cid', 'title', 'text', 'tags', 'summary', 'thumb', 'reprint', 'slug', 'created'];
+
+  if (fields.some((field) => String(a[field] ?? '') !== String(b[field] ?? ''))) {
+    return false;
+  }
+
+  const aMid = Array.isArray(a.mid) ? [...a.mid].map(Number).sort() : [];
+  const bMid = Array.isArray(b.mid) ? [...b.mid].map(Number).sort() : [];
+
+  return JSON.stringify(aMid) === JSON.stringify(bMid);
 }
 
 /**
@@ -30,18 +59,28 @@ export function readDraft(key) {
  *
  * @param {string} key cid 或本地草稿 id
  * @param {object} data
+ * @returns {boolean} 是否写入成功
  */
 export function writeDraft(key, data) {
   if (!key) {
-    return;
+    return false;
   }
 
   if (!String(data.text || '').trim() && !String(data.title || '').trim()) {
     localStorage.removeItem(DRAFT_PREFIX + key);
-    return;
+    return true;
   }
 
-  localStorage.setItem(DRAFT_PREFIX + key, JSON.stringify({ ...data, updatedAt: Date.now() }));
+  const prev = readDraft(key);
+  const next = { ...data, updatedAt: Date.now() };
+
+  // 内容没变就不刷新时间戳：只是打开再返回，不应让本地草稿「变新」，
+  // 否则下次加载会用陈旧内容覆盖网页端的修改
+  if (prev && sameContent(prev, next)) {
+    next.updatedAt = prev.updatedAt || next.updatedAt;
+  }
+
+  return safeSet(DRAFT_PREFIX + key, JSON.stringify(next));
 }
 
 export function removeDraft(key) {
@@ -86,7 +125,7 @@ export function pushHistory(key, { title, text }) {
   }
 
   list.unshift({ at: Date.now(), title: title || '', text });
-  localStorage.setItem(HISTORY_PREFIX + key, JSON.stringify(list.slice(0, MAX_HISTORY)));
+  safeSet(HISTORY_PREFIX + key, JSON.stringify(list.slice(0, MAX_HISTORY)));
 }
 
 export function readHistory(key) {
@@ -113,7 +152,7 @@ export function migrateLegacyDraft() {
 
   if (legacy && (String(legacy.text || '').trim() || String(legacy.title || '').trim())) {
     const id = `draft-${(legacy.updatedAt || Date.now()).toString(36)}`;
-    localStorage.setItem(DRAFT_PREFIX + id, JSON.stringify(legacy));
+    safeSet(DRAFT_PREFIX + id, JSON.stringify(legacy));
   }
 
   localStorage.removeItem(`${DRAFT_PREFIX}new`);
@@ -148,14 +187,16 @@ export function addSnippet({ name, text }) {
     at: Date.now(),
   };
 
-  localStorage.setItem(SNIPPET_KEY, JSON.stringify([snippet, ...listSnippets()].slice(0, MAX_SNIPPETS)));
+  if (!safeSet(SNIPPET_KEY, JSON.stringify([snippet, ...listSnippets()].slice(0, MAX_SNIPPETS)))) {
+    return null;
+  }
 
   return snippet;
 }
 
 export function removeSnippet(id) {
   const next = listSnippets().filter((item) => item.id !== id);
-  localStorage.setItem(SNIPPET_KEY, JSON.stringify(next));
+  safeSet(SNIPPET_KEY, JSON.stringify(next));
 
   return next;
 }

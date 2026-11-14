@@ -86,6 +86,7 @@ const state = {
   selectedMids: new Set(),
   selectedTagNames: new Set(),
   autosaveTimer: null,
+  searchTimer: null,
   toastTimer: null,
   posts: [],
   filter: 'all',
@@ -97,6 +98,7 @@ const state = {
   item: null,
   allowWarnings: false,
   checkDraft: true,
+  quotaWarned: false,
 };
 
 // ─── 通用 ────────────────────────────────────────────────────────────────
@@ -258,7 +260,14 @@ async function loadPosts({ reset = true } = {}) {
   }
 
   try {
-    const data = await call('posts', { query: { page: state.page, size: PAGE_SIZE } });
+    const query = { page: state.page, size: PAGE_SIZE };
+
+    // 搜索走服务端标题检索，否则只能搜到已加载的几页
+    if (state.query.trim()) {
+      query.keyword = state.query.trim();
+    }
+
+    const data = await call('posts', { query });
     const items = data.items || [];
     const exists = new Set(reset ? [] : state.posts.map((item) => item.cid));
     const merged = reset ? [] : [...state.posts];
@@ -475,14 +484,16 @@ function openItemSheet(item) {
       openPost(item.cid);
     });
 
-    addItemAction(item.slug ? '复制文章链接' : '复制文章 ID', async () => {
-      const settings = getSettings();
-      const text = item.slug
-        ? `${settings.server.replace(/\/+$/, '')}/${item.slug}`
-        : String(item.cid);
-      await copyText(text);
-      closeItemSheet();
-      toast('已复制');
+    addItemAction(item.status === 'draft' ? '复制文章 ID' : '复制文章链接', async () => {
+      try {
+        // 永久链接规则可能不是 /{slug}（如 /archives/{cid}/），由服务端按路由生成
+        const detail = item.status === 'draft' ? null : await call('post', { query: { cid: item.cid } });
+        await copyText(detail?.url || String(item.cid));
+        closeItemSheet();
+        toast('已复制');
+      } catch (error) {
+        toast(error.message);
+      }
     });
 
     let armed = false;
@@ -689,7 +700,7 @@ function persistLocal() {
     return;
   }
 
-  writeDraft(state.draftKey, {
+  const saved = writeDraft(state.draftKey, {
     cid: state.cid,
     title: el.title.value,
     text: getEditorValue(),
@@ -701,6 +712,12 @@ function persistLocal() {
     slug: el.slug.value,
     created: el.created.value,
   });
+
+  // 配额溢出时只提示一次，避免每次自动保存都弹 toast
+  if (!saved && !state.quotaWarned) {
+    state.quotaWarned = true;
+    toast('本地存储空间不足，草稿未能保存，请清理历史版本后重试');
+  }
 }
 
 /**
@@ -766,11 +783,39 @@ function openLocalDraft(id) {
   });
 }
 
+/**
+ * 判断本地草稿与服务端文章是否存在实质差异
+ */
+function draftDiffers(draft, post) {
+  const pairs = [
+    [draft.title, post.title],
+    [draft.text, post.text],
+    [draft.summary, post.fields?.summary ?? ''],
+    [draft.thumb, post.fields?.thumb ?? ''],
+    [draft.reprint ?? 'standard', post.fields?.reprint ?? 'standard'],
+    [draft.slug, post.slug],
+    [draft.tags, post.tags],
+  ];
+
+  if (pairs.some(([local, remote]) => String(local ?? '') !== String(remote ?? ''))) {
+    return true;
+  }
+
+  const localMids = Array.isArray(draft.mid) ? [...draft.mid].map(Number).sort() : [];
+  const remoteMids = (post.categories || []).map(Number).sort();
+
+  return JSON.stringify(localMids) !== JSON.stringify(remoteMids);
+}
+
 async function openPost(cid) {
   try {
     const post = await call('post', { query: { cid } });
     const local = readDraft(String(cid));
-    const useLocal = local && local.updatedAt > post.modified * 1000;
+    // 时间更新且内容确实不同才恢复本地：打开过文章也会落一份草稿，
+    // 不能仅凭时间戳把它判成「本地更新」，否则会把网页端的修改回滚
+    const useLocal = Boolean(
+      local && local.updatedAt > post.modified * 1000 && draftDiffers(local, post),
+    );
     const source = useLocal ? local : {};
 
     state.status = post.status;
@@ -1302,13 +1347,19 @@ async function checkUpdate(manual = false) {
     } else if (manual) {
       toast('当前已是最新版本');
     }
+
+    // 只有检查成功才记录时间：失败时下次打开还会重试
+    try {
+      localStorage.setItem('sxlb.updateCheck', String(Date.now()));
+    } catch {
+      // 存储已满时忽略，不影响更新检查
+    }
   } catch {
     if (manual) {
       toast('检查更新失败，请稍后再试');
     }
   } finally {
     clearTimeout(timer);
-    localStorage.setItem('sxlb.updateCheck', String(Date.now()));
   }
 }
 
@@ -1346,6 +1397,14 @@ function bind() {
   el.listSearch.addEventListener('input', () => {
     state.query = el.listSearch.value;
     renderList();
+
+    // 防抖后按标题从服务端重新检索，搜索结果不再受已加载页数限制
+    clearTimeout(state.searchTimer);
+    state.searchTimer = setTimeout(() => {
+      if (isConfigured()) {
+        loadPosts({ reset: true });
+      }
+    }, 300);
   });
 
   el.listMore.addEventListener('click', () => {

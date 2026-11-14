@@ -88,11 +88,17 @@ class Media
 
         // path 为空时跳过磁盘删除，避免误删站点根目录
         if ((string) $attachment->path !== '') {
-            Upload::deleteHandle([
+            $file = __TYPECHO_ROOT_DIR__ . '/' . ltrim((string) $attachment->path, '/');
+            $removed = Upload::deleteHandle([
                 'cid' => $cid,
                 'attachment' => $attachment,
                 'parent' => (int) $row['parent'],
             ]);
+
+            // 文件本就不存在时允许清理残留记录；确实删不掉则中止，避免留下无主文件
+            if (!$removed && is_file($file)) {
+                throw new \RuntimeException('磁盘文件删除失败，请检查 uploads 目录权限');
+            }
         }
 
         $db->query($db->delete('table.contents')->where('cid = ?', $cid));
