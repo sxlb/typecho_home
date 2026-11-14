@@ -410,7 +410,7 @@ const THEME_ITEMS = [
 ];
 
 const THEME_ICON =
-  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>';
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" style="fill:none;stroke-width:1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>';
 
 let themeGridReady = false;
 
@@ -458,7 +458,10 @@ function closeSheet(sheetId, maskId) {
  * @returns {boolean} 是否有面板被关闭（供安卓返回键判断）
  */
 export function closeEditorSheets() {
-  return closeSheet('theme-sheet', 'theme-mask');
+  const theme = closeSheet('theme-sheet', 'theme-mask');
+  const table = closeSheet('table-sheet', 'table-mask');
+
+  return theme || table;
 }
 
 function createCells(grid, items, onPick) {
@@ -520,6 +523,7 @@ function getIrRoot() {
 }
 
 let activeTable = null;
+let savedRange = null;
 
 function liveCell() {
   const selection = window.getSelection();
@@ -541,12 +545,18 @@ function liveCell() {
   return null;
 }
 
-// 记住光标最后停留的表格：点工具栏按钮时选区可能会丢
+// 记住光标最后停留的表格和选区：点工具栏/面板按钮时选区会丢，操作前要还原
 document.addEventListener('selectionchange', () => {
   const cell = liveCell();
 
   if (cell) {
     activeTable = cell.closest('table');
+
+    const selection = window.getSelection();
+
+    if (selection && selection.rangeCount > 0) {
+      savedRange = selection.getRangeAt(0).cloneRange();
+    }
   }
 });
 
@@ -621,14 +631,165 @@ function deleteCurrentTable() {
   }
 
   activeTable = null;
+  savedRange = null;
   notifyChange();
 }
 
-const DELETE_TABLE_ICON =
-  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.5 9.5v10"/><path d="M14 16.5h4.5"/></svg>';
+/* ─── 表格结构操作（借用 Vditor 内置快捷键，避免自己改 DOM） ── */
+
+const isMac = /Mac/.test(navigator.platform);
+
+/**
+ * Vditor 即时渲染模式下的表格结构快捷键（断点见 dist/index.js 的 fixTable）。
+ * 手机上没有 ⌘ 键，这里合成 keydown 事件调用它，保证撤销栈和 markdown 都由 Vditor 自己维护。
+ */
+const TABLE_HOTKEYS = {
+  rowAbove: { key: 'F', shift: true, code: 'KeyF' },
+  rowBelow: { key: '=', shift: false, code: 'Equal' },
+  colLeft: { key: 'G', shift: true, code: 'KeyG' },
+  colRight: { key: isMac ? '=' : '+', shift: true, code: 'Equal' },
+  delRow: { key: '-', shift: false, code: 'Minus' },
+  delCol: { key: isMac ? '-' : '_', shift: true, code: 'Minus' },
+};
+
+/**
+ * 把光标还原到上次所在的单元格
+ *
+ * @returns {boolean} 是否成功定位到表格内
+ */
+function restoreCellRange() {
+  const selection = window.getSelection();
+
+  if (!selection) {
+    return false;
+  }
+
+  if (savedRange && savedRange.startContainer && document.contains(savedRange.startContainer)) {
+    selection.removeAllRanges();
+    selection.addRange(savedRange);
+    return !!liveCell();
+  }
+
+  return !!liveCell();
+}
+
+/**
+ * 合成快捷键事件，交给 Vditor 处理表格增删行列
+ *
+ * @param {{key: string, shift: boolean, code: string}} hotkey
+ * @returns {boolean} Vditor 是否处理了该事件
+ */
+function dispatchTableHotkey({ key, shift, code }) {
+  const target = document.querySelector('#editor .vditor-ir .vditor-reset');
+
+  if (!target) {
+    return false;
+  }
+
+  const event = new KeyboardEvent('keydown', {
+    key,
+    code,
+    ctrlKey: true,
+    shiftKey: shift,
+    bubbles: true,
+    cancelable: true,
+  });
+
+  target.dispatchEvent(event);
+
+  return event.defaultPrevented;
+}
+
+/**
+ * 执行一项表格操作：删除整表走 markdown，增删行列走 Vditor 快捷键
+ *
+ * @param {'rowAbove'|'rowBelow'|'colLeft'|'colRight'|'delRow'|'delCol'|'deleteTable'} action
+ */
+function runTableAction(action) {
+  const table = currentTable();
+
+  if (!table) {
+    errorHandler?.('先把光标点进要编辑的表格');
+    return;
+  }
+
+  if (action === 'deleteTable') {
+    deleteCurrentTable();
+    return;
+  }
+
+  if (!restoreCellRange()) {
+    errorHandler?.('光标不在表格里，请点一下表格再操作');
+    return;
+  }
+
+  const handled = dispatchTableHotkey(TABLE_HOTKEYS[action]);
+
+  if (!handled) {
+    errorHandler?.('操作没生效，请点进单元格后重试');
+    return;
+  }
+
+  // Vditor 增删行列后会重新渲染，重新记录光标位置，方便连续操作
+  setTimeout(() => {
+    const selection = window.getSelection();
+
+    if (liveCell() && selection && selection.rangeCount > 0) {
+      savedRange = selection.getRangeAt(0).cloneRange();
+    }
+
+    notifyChange();
+  }, 80);
+}
+
+const TABLE_ACTIONS = [
+  { label: '上方插行', action: 'rowAbove' },
+  { label: '下方插行', action: 'rowBelow' },
+  { label: '删除本行', action: 'delRow' },
+  { label: '左侧插列', action: 'colLeft' },
+  { label: '右侧插列', action: 'colRight' },
+  { label: '删除本列', action: 'delCol' },
+  { label: '删除整个表格', action: 'deleteTable', danger: true, wide: true },
+];
+
+let tableGridReady = false;
+
+function ensureTableGrid() {
+  if (tableGridReady) {
+    return;
+  }
+
+  const grid = document.getElementById('table-grid');
+
+  if (!grid) {
+    return;
+  }
+
+  TABLE_ACTIONS.forEach((item) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'table-op' + (item.danger ? ' danger' : '') + (item.wide ? ' wide' : '');
+    btn.textContent = item.label;
+    btn.addEventListener('click', () => runTableAction(item.action));
+    grid.appendChild(btn);
+  });
+
+  document.getElementById('table-close')?.addEventListener('click', () => closeSheet('table-sheet', 'table-mask'));
+  document.getElementById('table-mask')?.addEventListener('click', () => closeSheet('table-sheet', 'table-mask'));
+
+  tableGridReady = true;
+}
+
+function openTableSheet() {
+  ensureTableGrid();
+  openSheet('table-sheet', 'table-mask');
+}
+
+const TABLE_ICON =
+  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" style="fill:none;stroke-width:1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 4.5v15"/></svg>';
 
 const CAMERA_ICON =
-  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.2"/></svg>';
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" style="fill:none;stroke-width:1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.2"/></svg>';
 
 /* ─── 编辑器 ────────────────────────────────────────────── */
 
@@ -667,9 +828,9 @@ export function initEditor({ value, onChange, getCid, onError }) {
       { name: 'inline-code', tip: '行内代码' },
       { name: 'code', tip: '代码块' },
       { name: 'link', tip: '链接' },
-      // 表格插入沿用 Vditor 原生按钮（带行列选择），旁边单独放删除
+      // 表格插入沿用 Vditor 原生按钮（带行列选择），旁边是结构操作面板
       { name: 'table', tip: '表格' },
-      { name: 'tabledelete', tip: '删除表格', icon: DELETE_TABLE_ICON, click: deleteCurrentTable },
+      { name: 'tableops', tip: '表格操作', icon: TABLE_ICON, click: openTableSheet },
       { name: 'upload', tip: '上传图片' },
       { name: 'camera', tip: '拍照', icon: CAMERA_ICON, click: openCamera },
       { name: 'theme', tip: '主题元素', icon: THEME_ICON, click: openThemeSheet },
@@ -734,6 +895,8 @@ export function setEditorValue(value) {
 export function destroyEditor() {
   closeEditorSheets();
   changeHandler = null;
+  activeTable = null;
+  savedRange = null;
 
   if (vditor) {
     vditor.destroy();

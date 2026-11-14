@@ -226,6 +226,24 @@
       </div>
     </aside>
 
+    <!-- 表格操作面板 -->
+    <div class="sheet-mask" id="table-mask" hidden></div>
+    <aside class="sheet" id="table-sheet" hidden aria-hidden="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <span>表格操作</span>
+        <button class="icon-btn" id="table-close" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+      <div class="sheet-body table-body">
+        <p class="theme-tip">先点进要编辑的单元格，再选下面的操作</p>
+        <div class="table-grid" id="table-grid"></div>
+      </div>
+    </aside>
+
     <!-- 主题元素输入弹窗 -->
     <div class="dialog" id="dialog" hidden>
       <div class="dialog-card">
