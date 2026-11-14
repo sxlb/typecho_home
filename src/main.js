@@ -1,6 +1,6 @@
 import './ui.css';
 import { call, uploadImage, getSettings, saveSettings, isConfigured, DEFAULT_SETTINGS } from './api.js';
-import { initEditor, getEditorValue, setEditorValue, destroyEditor, closeThemeSheet } from './editor.js';
+import { initEditor, getEditorValue, setEditorValue, destroyEditor, closeEditorSheets } from './editor.js';
 import {
   newDraftId,
   readDraft,
@@ -35,6 +35,7 @@ const el = {
   sheet: $('#sheet'),
   sheetMask: $('#sheet-mask'),
   categoryChips: $('#category-chips'),
+  tagChips: $('#tag-chips'),
   tags: $('#publish-tags'),
   summary: $('#publish-summary'),
   thumb: $('#publish-thumb'),
@@ -66,7 +67,9 @@ const state = {
   dirty: false,
   metasLoaded: false,
   categories: [],
+  tags: [],
   selectedMids: new Set(),
+  selectedTagNames: new Set(),
   autosaveTimer: null,
   toastTimer: null,
   posts: [],
@@ -382,7 +385,15 @@ function closeItemSheet() {
 // ─── 编辑 ────────────────────────────────────────────────────────────────
 
 function fillSheet(data) {
-  el.tags.value = data.tags || '';
+  const tagNames = String(data.tags || '')
+    .split(/[,，]/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+
+  state.selectedTagNames = new Set(tagNames);
+  el.tags.value = '';
+  renderTagChips();
+
   el.summary.value = data.summary || '';
   el.thumb.value = data.thumb || '';
   el.reprint.value = data.reprint || 'standard';
@@ -406,16 +417,64 @@ function currentFields() {
 async function ensureMetas() {
   if (state.metasLoaded) {
     renderCategoryChips();
+    renderTagChips();
     return;
   }
 
   try {
-    const data = await call('metas', { query: { type: 'category' } });
+    const data = await call('metas');
     state.categories = data.categories || [];
+    state.tags = data.tags || [];
     state.metasLoaded = true;
     renderCategoryChips();
+    renderTagChips();
   } catch (error) {
     toast(`分类加载失败：${error.message}`);
+  }
+}
+
+/** 已选标签 + 输入框里新输入的标签，去重后返回 */
+function collectTags() {
+  const names = new Set(state.selectedTagNames);
+
+  el.tags.value
+    .split(/[,，]/)
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .forEach((name) => names.add(name));
+
+  return [...names];
+}
+
+function renderTagChips() {
+  el.tagChips.innerHTML = '';
+
+  const known = new Set(state.tags.map((tag) => tag.name));
+  const names = state.tags.map((tag) => tag.name);
+
+  // 已选但不在历史标签里的（例如刚手输的），也渲染出来便于取消
+  for (const name of state.selectedTagNames) {
+    if (!known.has(name)) {
+      names.push(name);
+    }
+  }
+
+  el.tagChips.hidden = names.length === 0;
+
+  for (const name of names) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip' + (state.selectedTagNames.has(name) ? ' active' : '');
+    chip.textContent = name;
+    chip.addEventListener('click', () => {
+      if (state.selectedTagNames.has(name)) {
+        state.selectedTagNames.delete(name);
+      } else {
+        state.selectedTagNames.add(name);
+      }
+      chip.classList.toggle('active');
+    });
+    el.tagChips.appendChild(chip);
   }
 }
 
@@ -483,7 +542,7 @@ function persistLocal() {
     title: el.title.value,
     text: getEditorValue(),
     mid: [...state.selectedMids],
-    tags: el.tags.value,
+    tags: collectTags().join(','),
     summary: el.summary.value,
     thumb: el.thumb.value,
     reprint: el.reprint.value,
@@ -684,7 +743,7 @@ async function submit(isDraft) {
     slug: el.slug.value.trim(),
     isDraft,
     mid: [...state.selectedMids],
-    tags: el.tags.value.trim(),
+    tags: collectTags().join(','),
     fields: currentFields(),
   };
 
@@ -707,6 +766,8 @@ async function submit(isDraft) {
     state.cid = result.cid;
     state.status = result.status;
     state.dirty = false;
+    // 下次打开发布抽屉时重新拉取标签，刚新建的标签也能出现在列表里
+    state.metasLoaded = false;
 
     removeDraft(previousKey);
     removeDraft(String(previousKey));
@@ -946,6 +1007,28 @@ function bind() {
     scheduleAutosave();
   });
 
+  // 输入标签后回车 / 逗号，直接落成可点的标签
+  el.tags.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ',' && event.key !== '，') {
+      return;
+    }
+
+    event.preventDefault();
+
+    const names = el.tags.value
+      .split(/[,，]/)
+      .map((name) => name.trim())
+      .filter(Boolean);
+
+    if (!names.length) {
+      return;
+    }
+
+    names.forEach((name) => state.selectedTagNames.add(name));
+    el.tags.value = '';
+    renderTagChips();
+  });
+
   $('#btn-test').addEventListener('click', testConnection);
   $('#btn-save-settings').addEventListener('click', () => {
     saveSettingsFromForm();
@@ -998,8 +1081,8 @@ function bind() {
     App.addListener('backButton', () => {
       if (!el.dialog.hidden) {
         $('#dialog-cancel').click();
-      } else if (closeThemeSheet()) {
-        // 主题元素面板已关闭
+      } else if (closeEditorSheets()) {
+        // 编辑器内的主题 / 表格面板已关闭
       } else if (!el.itemSheet.hidden) {
         closeItemSheet();
       } else if (!el.historySheet.hidden) {

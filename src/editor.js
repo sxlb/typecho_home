@@ -5,6 +5,7 @@ import { uploadImage } from './api.js';
 let vditor = null;
 let currentCid = 0;
 let errorHandler = null;
+let changeHandler = null;
 
 /* ─── 通用输入弹窗 ──────────────────────────────────────── */
 
@@ -405,51 +406,13 @@ const THEME_ICON =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>';
 
 let themeGridReady = false;
+let tableGridReady = false;
 
-function ensureThemeGrid() {
-  if (themeGridReady) {
-    return;
-  }
+/* ─── 底部抽屉通用逻辑 ─────────────────────────────────── */
 
-  const grid = document.getElementById('theme-grid');
-
-  if (!grid) {
-    return;
-  }
-
-  THEME_ITEMS.forEach((item) => {
-    const cell = document.createElement('button');
-    cell.type = 'button';
-    cell.className = 'theme-cell';
-
-    const glyph = document.createElement('span');
-    glyph.className = 'theme-glyph';
-    glyph.textContent = item.glyph;
-
-    const label = document.createElement('span');
-    label.textContent = item.label;
-    label.className = 'theme-label';
-
-    cell.append(glyph, label);
-    cell.addEventListener('click', () => {
-      closeThemeSheet();
-      item.run();
-    });
-
-    grid.appendChild(cell);
-  });
-
-  document.getElementById('theme-close')?.addEventListener('click', () => closeThemeSheet());
-  document.getElementById('theme-mask')?.addEventListener('click', () => closeThemeSheet());
-
-  themeGridReady = true;
-}
-
-function openThemeSheet() {
-  ensureThemeGrid();
-
-  const sheet = document.getElementById('theme-sheet');
-  const mask = document.getElementById('theme-mask');
+function openSheet(sheetId, maskId) {
+  const sheet = document.getElementById(sheetId);
+  const mask = document.getElementById(maskId);
 
   if (!sheet || !mask) {
     return;
@@ -464,14 +427,9 @@ function openThemeSheet() {
   });
 }
 
-/**
- * 关闭主题元素面板
- *
- * @returns {boolean} 面板原本是否处于打开状态（供安卓返回键判断）
- */
-export function closeThemeSheet() {
-  const sheet = document.getElementById('theme-sheet');
-  const mask = document.getElementById('theme-mask');
+function closeSheet(sheetId, maskId) {
+  const sheet = document.getElementById(sheetId);
+  const mask = document.getElementById(maskId);
 
   if (!sheet || sheet.hidden) {
     return false;
@@ -486,6 +444,249 @@ export function closeThemeSheet() {
   }, 260);
 
   return true;
+}
+
+/**
+ * 关闭编辑器里打开的底部面板（主题元素 / 表格）
+ *
+ * @returns {boolean} 是否有面板被关闭（供安卓返回键判断）
+ */
+export function closeEditorSheets() {
+  const themeClosed = closeSheet('theme-sheet', 'theme-mask');
+  const tableClosed = closeSheet('table-sheet', 'table-mask');
+  return themeClosed || tableClosed;
+}
+
+function createCells(grid, items, onPick) {
+  items.forEach((item) => {
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'theme-cell';
+
+    const glyph = document.createElement('span');
+    glyph.className = 'theme-glyph';
+    glyph.textContent = item.glyph;
+
+    const label = document.createElement('span');
+    label.textContent = item.label;
+    label.className = 'theme-label';
+
+    cell.append(glyph, label);
+    cell.addEventListener('click', () => {
+      onPick(item);
+    });
+
+    grid.appendChild(cell);
+  });
+}
+
+/* ─── 主题元素面板 ─────────────────────────────────────── */
+
+function ensureThemeGrid() {
+  if (themeGridReady) {
+    return;
+  }
+
+  const grid = document.getElementById('theme-grid');
+
+  if (!grid) {
+    return;
+  }
+
+  createCells(grid, THEME_ITEMS, (item) => {
+    closeSheet('theme-sheet', 'theme-mask');
+    item.run();
+  });
+
+  document.getElementById('theme-close')?.addEventListener('click', () => closeSheet('theme-sheet', 'theme-mask'));
+  document.getElementById('theme-mask')?.addEventListener('click', () => closeSheet('theme-sheet', 'theme-mask'));
+
+  themeGridReady = true;
+}
+
+function openThemeSheet() {
+  ensureThemeGrid();
+  openSheet('theme-sheet', 'theme-mask');
+}
+
+/* ─── 表格工具面板 ─────────────────────────────────────── */
+
+function getIrRoot() {
+  return document.querySelector('#editor .vditor-ir');
+}
+
+let activeCell = null;
+
+function currentCell() {
+  const selection = window.getSelection();
+
+  if (selection && selection.rangeCount > 0) {
+    const root = getIrRoot();
+    let node = selection.anchorNode;
+
+    while (node && node !== root) {
+      if (node.nodeType === 1 && (node.tagName === 'TD' || node.tagName === 'TH')) {
+        activeCell = node;
+        return node;
+      }
+      node = node.parentNode;
+    }
+  }
+
+  // 抽屉按钮抢走焦点后选区会丢失，回退到打开面板时记住的格子
+  return activeCell && activeCell.isConnected ? activeCell : null;
+}
+
+function currentTable() {
+  const cell = currentCell();
+  return cell ? cell.closest('table') : null;
+}
+
+function focusBlock(block) {
+  const range = document.createRange();
+  range.selectNodeContents(block);
+  range.collapse(true);
+
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function notifyChange() {
+  if (changeHandler) {
+    changeHandler(getEditorValue());
+  }
+}
+
+function insertTable() {
+  insert('\n| 列 1 | 列 2 | 列 3 |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |\n');
+}
+
+function paragraphAfterTable() {
+  const table = currentTable();
+
+  if (!table) {
+    errorHandler?.('先把光标点进表格里');
+    return;
+  }
+
+  const next = table.nextElementSibling;
+
+  if (next && next.tagName === 'P') {
+    focusBlock(next);
+    return;
+  }
+
+  const paragraph = document.createElement('p');
+  paragraph.setAttribute('data-block', '0');
+
+  if (next) {
+    next.before(paragraph);
+  } else {
+    table.after(paragraph);
+  }
+
+  focusBlock(paragraph);
+  notifyChange();
+}
+
+function deleteCurrentTable() {
+  const table = currentTable();
+
+  if (!table) {
+    errorHandler?.('先把光标点进要删除的表格');
+    return;
+  }
+
+  const next = table.nextElementSibling;
+
+  if (next) {
+    table.remove();
+    focusBlock(next);
+  } else {
+    const paragraph = document.createElement('p');
+    paragraph.setAttribute('data-block', '0');
+    table.replaceWith(paragraph);
+    focusBlock(paragraph);
+  }
+
+  notifyChange();
+}
+
+function deleteCurrentRow() {
+  const cell = currentCell();
+
+  if (!cell) {
+    errorHandler?.('先把光标点进表格里');
+    return;
+  }
+
+  const row = cell.closest('tr');
+  const body = row?.parentElement;
+
+  if (!row || !body) {
+    return;
+  }
+
+  if (body.tagName === 'THEAD') {
+    errorHandler?.('表头行不能删除');
+    return;
+  }
+
+  if (body.rows.length <= 1) {
+    deleteCurrentTable();
+    return;
+  }
+
+  row.remove();
+
+  const firstCell = body.querySelector('td');
+  if (firstCell) {
+    focusBlock(firstCell);
+  }
+
+  notifyChange();
+}
+
+const TABLE_ITEMS = [
+  { glyph: '插', label: '插入表格', run: insertTable },
+  { glyph: '段', label: '表格后加一段', run: paragraphAfterTable },
+  { glyph: '行', label: '删除当前行', run: deleteCurrentRow },
+  { glyph: '删', label: '删除整个表格', run: deleteCurrentTable },
+];
+
+const TABLE_ICON =
+  '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9.5 9.5v10M15 9.5v10"/></svg>';
+
+function ensureTableGrid() {
+  if (tableGridReady) {
+    return;
+  }
+
+  const grid = document.getElementById('table-grid');
+
+  if (!grid) {
+    return;
+  }
+
+  createCells(grid, TABLE_ITEMS, (item) => {
+    closeSheet('table-sheet', 'table-mask');
+    // 等抽屉开始收起再操作 DOM，避免焦点被抽屉抢走
+    setTimeout(() => item.run(), 60);
+  });
+
+  document.getElementById('table-close')?.addEventListener('click', () => closeSheet('table-sheet', 'table-mask'));
+  document.getElementById('table-mask')?.addEventListener('click', () => closeSheet('table-sheet', 'table-mask'));
+
+  tableGridReady = true;
+}
+
+function openTableSheet() {
+  ensureTableGrid();
+  // 先记住当前表格位置：抽屉一旦获得焦点，编辑器的选区就会丢失
+  activeCell = null;
+  currentCell();
+  openSheet('table-sheet', 'table-mask');
 }
 
 const CAMERA_ICON =
@@ -503,6 +704,7 @@ export function initEditor({ value, onChange, getCid, onError }) {
 
   currentCid = getCid;
   errorHandler = onError;
+  changeHandler = onChange;
 
   vditor = new Vditor('editor', {
     mode: 'ir',
@@ -527,7 +729,8 @@ export function initEditor({ value, onChange, getCid, onError }) {
       { name: 'inline-code', tip: '行内代码' },
       { name: 'code', tip: '代码块' },
       { name: 'link', tip: '链接' },
-      { name: 'table', tip: '表格' },
+      // 用自定义名字，避免和 Vditor 内置的 table 项合并（内置项点一下就直接插入表格）
+      { name: 'tabletools', tip: '表格', icon: TABLE_ICON, click: openTableSheet },
       { name: 'upload', tip: '上传图片' },
       { name: 'camera', tip: '拍照', icon: CAMERA_ICON, click: openCamera },
       { name: 'theme', tip: '主题元素', icon: THEME_ICON, click: openThemeSheet },
@@ -590,7 +793,8 @@ export function setEditorValue(value) {
 }
 
 export function destroyEditor() {
-  closeThemeSheet();
+  closeEditorSheets();
+  changeHandler = null;
 
   if (vditor) {
     vditor.destroy();

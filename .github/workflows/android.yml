@@ -30,12 +30,14 @@ jobs:
         with:
           packages: 'platforms;android-35 build-tools;35.0.0'
 
-      # 复用同一个调试签名，否则每次构建签名不同，手机上无法覆盖安装
-      - name: 缓存签名密钥
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: android-debug-keystore-v1
+      # 版本号来源唯一：package.json。versionCode 用主*10000+次*100+修，保证每次升级递增
+      - name: 读取版本号
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          CODE=$(node -p "const [a,b,c]=require('./package.json').version.split('.').map(Number); a*10000+b*100+c")
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
 
       - name: 安装依赖
         run: npm ci
@@ -46,6 +48,17 @@ jobs:
       - name: 生成安卓工程
         run: npx cap add android
 
+      # 写入 versionName/versionCode，并复用仓库内的固定签名，
+      # 否则每次构建签名不同，手机上无法覆盖安装
+      - name: 写入版本号与签名
+        run: |
+          sed -i "s/versionCode .*/versionCode ${{ steps.version.outputs.code }}/" android/app/build.gradle
+          sed -i "s/versionName .*/versionName \"${{ steps.version.outputs.value }}\"/" android/app/build.gradle
+          grep -n "versionCode\|versionName" android/app/build.gradle
+          mkdir -p ~/.android
+          cp .github/debug.keystore ~/.android/debug.keystore
+          chmod 600 ~/.android/debug.keystore
+
       - name: 同步资源
         run: npx cap sync android
 
@@ -54,12 +67,6 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
-
-      - name: 读取版本号
-        id: version
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: 重命名产物
         run: cp android/app/build/outputs/apk/debug/app-debug.apk sxlb-writer.apk
@@ -71,7 +78,7 @@ jobs:
           tag_name: latest
           name: 最新构建
           body: |
-            版本：${{ steps.version.outputs.value }}
+            版本：${{ steps.version.outputs.value }}（versionCode ${{ steps.version.outputs.code }}）
             提交：${{ github.sha }}
             构建记录：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           files: sxlb-writer.apk
