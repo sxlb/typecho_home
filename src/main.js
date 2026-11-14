@@ -519,8 +519,19 @@ function startEditor({ cid, draftKey, title, text, meta }) {
     },
     getCid: () => state.cid,
     onError: (message) => toast(message),
+    // 编辑器内切换模式后记住选择，下次打开文章沿用
+    onModeChange: (mode) => {
+      saveSettings({ ...getSettings(), editorMode: mode });
+      toast(`已切换到${EDITOR_MODE_LABELS[mode] || '新'}模式`);
+    },
   });
 }
+
+const EDITOR_MODE_LABELS = {
+  ir: '即时渲染',
+  wysiwyg: '所见即所得',
+  sv: '分屏预览',
+};
 
 function scheduleAutosave() {
   clearTimeout(state.autosaveTimer);

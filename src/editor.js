@@ -6,6 +6,7 @@ let vditor = null;
 let currentCid = 0;
 let errorHandler = null;
 let changeHandler = null;
+let modeHandler = null;
 
 /* ─── 通用输入弹窗 ──────────────────────────────────────── */
 
@@ -464,6 +465,47 @@ export function closeEditorSheets() {
   return theme || table;
 }
 
+/* ─── 编辑模式即时切换（即时渲染 / 所见即所得 / 分屏预览） ── */
+
+/**
+ * 分屏预览是纯 markdown 源码，表格结构直接改文本即可，不需要结构面板
+ *
+ * @param {boolean} visible
+ */
+function setTableOpsVisible(visible) {
+  const button = document.querySelector('#editor .vditor-toolbar [data-type="tableops"]');
+  const item = button?.closest('.vditor-toolbar__item');
+
+  if (item) {
+    item.style.display = visible ? '' : 'none';
+  }
+}
+
+// Vditor 自带的 edit-mode 面板切换后，同步记录模式（写回设置）并联动表格面板
+// 用捕获阶段监听：Vditor 的 hint 按钮点击会阻止冒泡
+document.addEventListener(
+  'click',
+  (event) => {
+    const button =
+      event.target instanceof Element
+        ? event.target.closest('#editor .vditor-toolbar [data-mode]')
+        : null;
+
+    if (!button) {
+      return;
+    }
+
+    const mode = button.getAttribute('data-mode');
+
+    // 切换模式会重建 DOM，之前记下的表格与选区已失效
+    activeTable = null;
+    savedRange = null;
+    setTableOpsVisible(mode !== 'sv');
+    modeHandler?.(mode);
+  },
+  true,
+);
+
 function createCells(grid, items, onPick) {
   items.forEach((item) => {
     const cell = document.createElement('button');
@@ -803,17 +845,15 @@ const CAMERA_ICON =
 /**
  * 初始化 Vditor（工具栏对齐 Handsome 主题后台编辑器）
  *
- * @param {{value: string, mode?: 'ir'|'wysiwyg'|'sv', onChange: (value: string) => void, getCid: () => number, onError: (message: string) => void}} options
+ * @param {{value: string, mode?: 'ir'|'wysiwyg'|'sv', onChange: (value: string) => void, getCid: () => number, onError: (message: string) => void, onModeChange?: (mode: string) => void}} options
  */
-export function initEditor({ value, mode = 'ir', onChange, getCid, onError }) {
+export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onModeChange }) {
   destroyEditor();
 
   currentCid = getCid;
   errorHandler = onError;
   changeHandler = onChange;
-
-  // 分屏预览是纯 markdown + 预览，表格结构直接改源码即可，不需要操作面板
-  const isSv = mode === 'sv';
+  modeHandler = onModeChange;
 
   vditor = new Vditor('editor', {
     mode,
@@ -840,10 +880,12 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError }) {
       { name: 'link', tip: '链接' },
       // 表格插入沿用 Vditor 原生按钮（带行列选择），旁边是结构操作面板
       { name: 'table', tip: '表格' },
-      ...(isSv ? [] : [{ name: 'tableops', tip: '表格操作', icon: TABLE_ICON, click: openTableSheet }]),
+      { name: 'tableops', tip: '表格操作', icon: TABLE_ICON, click: openTableSheet },
       { name: 'upload', tip: '上传图片' },
       { name: 'camera', tip: '拍照', icon: CAMERA_ICON, click: openCamera },
       { name: 'theme', tip: '主题元素', icon: THEME_ICON, click: openThemeSheet },
+      // 内置编辑模式切换：即时渲染 / 所见即所得 / 分屏预览，切换时保留正文
+      { name: 'edit-mode', tip: '编辑模式' },
       { name: 'preview', tip: '预览' },
       '|',
       { name: 'undo', tip: '撤销' },
@@ -854,6 +896,8 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError }) {
       math: { engine: 'MathJax', inlineDigit: true },
     },
     input: (text) => onChange?.(text),
+    // 首次渲染完成后按当前模式决定是否显示表格结构面板
+    after: () => setTableOpsVisible(mode !== 'sv'),
     upload: {
       accept: 'image/*',
       handler: (files) => uploadFiles(Array.from(files || [])),
@@ -905,6 +949,7 @@ export function setEditorValue(value) {
 export function destroyEditor() {
   closeEditorSheets();
   changeHandler = null;
+  modeHandler = null;
   activeTable = null;
   savedRange = null;
 
