@@ -48,16 +48,12 @@ jobs:
       - name: 生成安卓工程
         run: npx cap add android
 
-      # 写入 versionName/versionCode，并复用仓库内的固定签名，
+      # 写入 versionName/versionCode，并把调试签名指向仓库内的固定密钥，
       # 否则每次构建签名不同，手机上无法覆盖安装
       - name: 写入版本号与签名
         run: |
-          sed -i "s/versionCode .*/versionCode ${{ steps.version.outputs.code }}/" android/app/build.gradle
-          sed -i "s/versionName .*/versionName \"${{ steps.version.outputs.value }}\"/" android/app/build.gradle
-          grep -n "versionCode\|versionName" android/app/build.gradle
-          mkdir -p ~/.android
-          cp .github/debug.keystore ~/.android/debug.keystore
-          chmod 600 ~/.android/debug.keystore
+          node scripts/patch-android.mjs
+          grep -n "versionCode\|versionName\|debug.keystore" android/app/build.gradle
 
       - name: 同步资源
         run: npx cap sync android
