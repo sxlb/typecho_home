@@ -481,15 +481,23 @@ export function closeEditorSheets() {
   return theme || table || snippet;
 }
 
-/* ─── 编辑模式即时切换（即时渲染 / 所见即所得 / 分屏预览） ── */
+/* ─── 编辑模式即时切换（即时渲染 / 所见即所得 / 分屏预览 / 纯代码） ── */
+
+/** 对外呈现的模式：纯代码在 Vditor 内部实际是 sv，靠样式区分 */
+let uiMode = 'ir';
+/** 进入纯代码前的模式，再点一次纯代码按钮时回到这里 */
+let lastTextMode = 'ir';
+/** 正在通过内置菜单切到 sv，用来把这次切换识别为「纯代码」 */
+let pendingCode = false;
 
 /**
- * 分屏预览是纯 markdown 源码，表格结构直接改文本即可，不需要结构面板
+ * 显示 / 隐藏工具栏里的某一项（Vditor 把按钮包在 .vditor-toolbar__item 里）
  *
+ * @param {string} type 按钮的 data-type
  * @param {boolean} visible
  */
-function setTableOpsVisible(visible) {
-  const button = document.querySelector('#editor .vditor-toolbar [data-type="tableops"]');
+function setToolbarItemVisible(type, visible) {
+  const button = document.querySelector(`#editor .vditor-toolbar [data-type="${type}"]`);
   const item = button?.closest('.vditor-toolbar__item');
 
   if (item) {
@@ -497,7 +505,140 @@ function setTableOpsVisible(visible) {
   }
 }
 
-// Vditor 自带的 edit-mode 面板切换后，同步记录模式（写回设置）并联动表格面板
+/**
+ * 同步模式相关的界面状态
+ *
+ * - 纯代码：源码占满（样式类）、隐藏表格结构面板与内置预览按钮、显示「看成品」
+ * - 分屏预览：源码与预览并排，表格结构直接改文本，隐藏结构面板
+ *
+ * @param {'ir'|'wysiwyg'|'sv'|'code'} mode
+ */
+function syncModeUi(mode) {
+  uiMode = mode;
+
+  const root = document.getElementById('editor');
+
+  if (!root) {
+    return;
+  }
+
+  const isCode = mode === 'code';
+
+  root.classList.toggle('editor-code', isCode);
+
+  if (!isCode) {
+    root.classList.remove('editor-code-preview');
+  }
+
+  setToolbarItemVisible('tableops', mode !== 'sv' && !isCode);
+  setToolbarItemVisible('preview', !isCode);
+  setToolbarItemVisible('codepreview', isCode);
+
+  document
+    .querySelector('#editor .vditor-toolbar [data-type="codemode"]')
+    ?.classList.toggle('vditor-menu--current', isCode);
+
+  if (!isCode) {
+    document
+      .querySelector('#editor .vditor-toolbar [data-type="codepreview"]')
+      ?.classList.remove('vditor-menu--current');
+  }
+}
+
+/**
+ * 通过内置「编辑模式」菜单切换模式（Vditor 没有公开的 setEditMode）
+ *
+ * @param {'ir'|'wysiwyg'|'sv'} mode
+ * @returns {boolean} 是否成功点到目标项
+ */
+function switchToEditorMode(mode) {
+  const trigger = document.querySelector('#editor .vditor-toolbar [data-type="edit-mode"]');
+
+  if (!trigger) {
+    return false;
+  }
+
+  const panel = trigger.parentElement?.querySelector('.vditor-hint');
+
+  // 面板已展开时不要再点一次，否则会被收起
+  if (panel && panel.style.display !== 'block') {
+    trigger.click();
+  }
+
+  const target = panel?.querySelector(`button[data-mode="${mode}"]`);
+
+  if (!target) {
+    return false;
+  }
+
+  target.click();
+
+  return true;
+}
+
+/** 进入 / 退出纯代码模式 */
+function enterCodeMode() {
+  if (uiMode === 'code') {
+    if (lastTextMode === 'sv') {
+      // 本来就是分屏预览，直接恢复并排视图即可
+      syncModeUi('sv');
+      modeHandler?.('sv');
+    } else {
+      switchToEditorMode(lastTextMode);
+    }
+
+    return;
+  }
+
+  lastTextMode = uiMode;
+
+  // 分屏预览本身就是源码编辑，直接隐藏预览区即可
+  if (vditor?.getCurrentMode?.() === 'sv') {
+    syncModeUi('code');
+    modeHandler?.('code');
+    return;
+  }
+
+  pendingCode = true;
+
+  if (!switchToEditorMode('sv')) {
+    pendingCode = false;
+  }
+}
+
+/** 纯代码模式下「看成品」：把预览区铺满成覆盖层 */
+function toggleCodePreview() {
+  const root = document.getElementById('editor');
+
+  if (!root || !root.classList.contains('editor-code')) {
+    return;
+  }
+
+  const open = root.classList.toggle('editor-code-preview');
+
+  if (open) {
+    // 先收起键盘，再保证预览是最新内容
+    vditor?.blur?.();
+
+    // 实时预览默认有 1 秒防抖，临时关掉让「看成品」立即出图
+    const previewOptions = vditor?.vditor?.options?.preview;
+
+    if (previewOptions) {
+      const delay = previewOptions.delay;
+      previewOptions.delay = 0;
+      vditor.renderPreview();
+      previewOptions.delay = delay;
+    } else {
+      vditor?.renderPreview?.();
+    }
+  }
+
+  document
+    .querySelector('#editor .vditor-toolbar [data-type="codepreview"]')
+    ?.classList.toggle('vditor-menu--current', open);
+}
+
+// Vditor 自带的 edit-mode 面板切换后，同步记录模式（写回设置）并联动界面
 // 用捕获阶段监听：Vditor 的 hint 按钮点击会阻止冒泡
 document.addEventListener(
   'click',
@@ -511,12 +652,20 @@ document.addEventListener(
       return;
     }
 
-    const mode = button.getAttribute('data-mode');
+    const clicked = button.getAttribute('data-mode');
+    // 我们主动切到 sv 时，这次切换的用户意图是「纯代码」
+    const mode = pendingCode && clicked === 'sv' ? 'code' : clicked;
+
+    pendingCode = false;
+
+    if (mode !== 'code') {
+      lastTextMode = mode;
+    }
 
     // 切换模式会重建 DOM，之前记下的表格与选区已失效
     activeTable = null;
     savedRange = null;
-    setTableOpsVisible(mode !== 'sv');
+    syncModeUi(mode);
     modeHandler?.(mode);
   },
   true,
@@ -859,6 +1008,12 @@ const CAMERA_ICON =
 const SNIPPET_ICON =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" style="fill:none;stroke-width:1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5h11a1 1 0 0 1 1 1v16l-6.5-4.2L5.5 20.5v-16a1 1 0 0 1 1-1z"/></svg>';
 
+const CODE_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" style="fill:none;stroke-width:1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5"/></svg>';
+
+const EYE_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" style="fill:none;stroke-width:1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12s3.6-6 9.5-6 9.5 6 9.5 6-3.6 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/></svg>';
+
 /* ─── 片段库（常用开头、声明、SEO 描述等，只存本机） ────── */
 
 let snippetSheetReady = false;
@@ -988,7 +1143,7 @@ function openSnippetSheet() {
 /**
  * 初始化 Vditor（工具栏对齐 Handsome 主题后台编辑器）
  *
- * @param {{value: string, mode?: 'ir'|'wysiwyg'|'sv', onChange: (value: string) => void, getCid: () => number, onError: (message: string) => void, onModeChange?: (mode: string) => void}} options
+ * @param {{value: string, mode?: 'ir'|'wysiwyg'|'sv'|'code', onChange: (value: string) => void, getCid: () => number, onError: (message: string) => void, onModeChange?: (mode: string) => void}} options
  */
 export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onModeChange }) {
   destroyEditor();
@@ -998,8 +1153,14 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onMo
   changeHandler = onChange;
   modeHandler = onModeChange;
 
+  // Vditor 没有纯代码模式：用 sv（源码）模式 + 样式隐藏预览区实现
+  const vditorMode = mode === 'code' ? 'sv' : mode;
+
+  lastTextMode = mode === 'code' ? 'ir' : mode;
+  pendingCode = false;
+
   vditor = new Vditor('editor', {
-    mode,
+    mode: vditorMode,
     value: value || '',
     height: '100%',
     cdn: `${import.meta.env.BASE_URL}vditor`,
@@ -1032,6 +1193,9 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onMo
       { name: 'snippets', tip: '片段库', icon: SNIPPET_ICON, click: openSnippetSheet },
       // 内置编辑模式切换：即时渲染 / 所见即所得 / 分屏预览，切换时保留正文
       { name: 'edit-mode', tip: '编辑模式' },
+      // 纯代码：只显示 Markdown 源码，右侧「看成品」按需整屏预览
+      { name: 'codemode', tip: '纯代码模式', icon: CODE_ICON, click: enterCodeMode },
+      { name: 'codepreview', tip: '看成品', icon: EYE_ICON, click: toggleCodePreview },
       { name: 'preview', tip: '预览' },
       '|',
       { name: 'undo', tip: '撤销' },
@@ -1042,8 +1206,8 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onMo
       math: { engine: 'MathJax', inlineDigit: true },
     },
     input: (text) => onChange?.(text),
-    // 首次渲染完成后按当前模式决定是否显示表格结构面板
-    after: () => setTableOpsVisible(mode !== 'sv'),
+    // 首次渲染完成后同步模式相关的按钮与样式
+    after: () => syncModeUi(mode),
     upload: {
       accept: 'image/*',
       handler: (files) => uploadFiles(Array.from(files || [])),
@@ -1233,5 +1397,7 @@ export function destroyEditor() {
 
   if (container) {
     container.innerHTML = '';
+    // Vditor 只清 vditor 类，这里把模式相关的残留一起清掉
+    container.classList.remove('vditor--dark', 'editor-code', 'editor-code-preview');
   }
 }

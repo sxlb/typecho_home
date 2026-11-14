@@ -572,6 +572,7 @@ const EDITOR_MODE_LABELS = {
   ir: '即时渲染',
   wysiwyg: '所见即所得',
   sv: '分屏预览',
+  code: '纯代码',
 };
 
 function scheduleAutosave() {

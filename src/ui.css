@@ -370,6 +370,49 @@ body {
   font-family: system-ui, -apple-system, "PingFang SC", sans-serif;
 }
 
+/* ─── 纯代码模式：源码占满，成品按需整屏预览 ─────────────── */
+
+/* Vditor 用内联 display 控制预览区，隐藏必须带 !important */
+#editor.editor-code .vditor-preview {
+  display: none !important;
+}
+
+#editor.editor-code .vditor-sv {
+  padding: 14px 14px 120px;
+  background: transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13.5px;
+  line-height: 1.8;
+  tab-size: 2;
+}
+
+#editor.editor-code-preview .vditor-preview {
+  display: block !important;
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--bg);
+}
+
+#editor.editor-code-preview .vditor-preview__action {
+  display: none;
+}
+
+#editor.editor-code-preview .vditor-preview > .vditor-reset {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px 16px 80px;
+}
+
+#editor.editor-code-preview .vditor-counter {
+  display: none;
+}
+
 /* ─── 设置 ─────────────────────────────────────────────── */
 
 .settings-body {
