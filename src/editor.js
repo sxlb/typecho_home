@@ -408,7 +408,7 @@ async function openFindReplace() {
     return;
   }
 
-  vditor.setValue(parts.join(value.replace), true);
+  vditor.setValue(parts.join(value.replace), false);
   notifyChange();
   errorHandler?.(`已替换 ${count} 处`);
 }
@@ -483,6 +483,9 @@ let themeGridReady = false;
 
 /* ─── 底部抽屉通用逻辑 ─────────────────────────────────── */
 
+// 关闭动画延时器：快速连续开关时取消上一次，避免刚打开的面板被旧定时器隐藏
+let sheetTimer = null;
+
 function openSheet(sheetId, maskId) {
   const sheet = document.getElementById(sheetId);
   const mask = document.getElementById(maskId);
@@ -491,6 +494,7 @@ function openSheet(sheetId, maskId) {
     return;
   }
 
+  clearTimeout(sheetTimer);
   sheet.hidden = false;
   mask.hidden = false;
 
@@ -511,7 +515,8 @@ function closeSheet(sheetId, maskId) {
   sheet.classList.remove('open');
   mask.classList.remove('open');
 
-  setTimeout(() => {
+  clearTimeout(sheetTimer);
+  sheetTimer = setTimeout(() => {
     sheet.hidden = true;
     mask.hidden = true;
   }, 260);
@@ -899,8 +904,8 @@ function deleteCurrentTable() {
   const text = lines.join('\n').replace(/^\n+/, '');
 
   if (vditor) {
-    // 不清空撤销栈，删错了还能撤销
-    vditor.setValue(text);
+    // 第二个参数 clearStack 传 false，删错了还能撤销
+    vditor.setValue(text, false);
   }
 
   activeTable = null;
@@ -1481,6 +1486,21 @@ export function setEditorValue(value) {
   if (vditor) {
     vditor.setValue(value || '', true);
   }
+}
+
+/**
+ * 同步编辑器主题
+ *
+ * Vditor 不会自动响应 <html data-theme>，系统深浅色切换后必须显式调用 setTheme。
+ *
+ * @param {'light'|'dark'} theme
+ */
+export function applyEditorTheme(theme) {
+  if (!vditor || typeof vditor.setTheme !== 'function') {
+    return;
+  }
+
+  vditor.setTheme(theme === 'dark' ? 'dark' : 'classic');
 }
 
 export function destroyEditor() {

@@ -246,7 +246,8 @@ class Post
     private static function applyTypeFilter($query, ?string $type)
     {
         if ($type === null) {
-            $query->where('table.contents.type = ? OR table.contents.type = ?', 'post', 'post_draft');
+            // 必须自己加括号：Typecho 用 AND 拼接后续 where，而 SQL 里 AND 优先级高于 OR
+            $query->where('(table.contents.type = ? OR table.contents.type = ?)', 'post', 'post_draft');
         } else {
             $query->where('table.contents.type = ?', $type);
         }

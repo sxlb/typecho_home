@@ -629,7 +629,7 @@ class Action extends Widget implements ActionInterface
             header('Access-Control-Allow-Credentials: true');
         }
 
-        header('Access-Control-Allow-Headers: Content-Type, X-Sxlb-Token, X-Sxlb-Ts, X-Sxlb-Sign');
+        header('Access-Control-Allow-Headers: Content-Type, X-Sxlb-Token, X-Sxlb-Ts, X-Sxlb-Nonce, X-Sxlb-Sign');
         header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
         header('Vary: Origin');
     }

@@ -1,6 +1,13 @@
 import './ui.css';
 import { call, uploadImage, getSettings, saveSettings, isConfigured, DEFAULT_SETTINGS } from './api.js';
-import { initEditor, getEditorValue, setEditorValue, destroyEditor, closeEditorSheets } from './editor.js';
+import {
+  initEditor,
+  getEditorValue,
+  setEditorValue,
+  applyEditorTheme,
+  destroyEditor,
+  closeEditorSheets,
+} from './editor.js';
 import { initAdmin, openAdmin, handleAdminBack } from './admin.js';
 import {
   newDraftId,
@@ -147,6 +154,8 @@ function applyTheme(pref = getSettings().theme) {
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute('content', theme === 'dark' ? '#161514' : '#f6f5f2');
+  // Vditor 的配色不走 CSS 变量，需要单独同步
+  applyEditorTheme(theme);
 }
 
 const EDITOR_FONT_SIZES = ['small', 'normal', 'large', 'xlarge'];
@@ -224,6 +233,9 @@ async function copyText(text) {
 
 const PAGE_SIZE = 50;
 
+// 请求序号：筛选 / 搜索快速切换时只认最后一次请求，避免旧结果覆盖新列表
+let listSeq = 0;
+
 /**
  * 拉取文章列表
  *
@@ -238,10 +250,6 @@ async function loadPosts({ reset = true } = {}) {
     return;
   }
 
-  if (state.listLoading) {
-    return;
-  }
-
   if (reset) {
     state.page = 1;
     state.hasMore = true;
@@ -251,6 +259,7 @@ async function loadPosts({ reset = true } = {}) {
     return;
   }
 
+  const seq = (listSeq += 1);
   state.listLoading = true;
   updateListMore();
 
@@ -273,6 +282,12 @@ async function loadPosts({ reset = true } = {}) {
     }
 
     const data = await call('posts', { query });
+
+    // 期间又发起了新请求，本次结果已过期，直接丢弃
+    if (seq !== listSeq) {
+      return;
+    }
+
     const items = data.items || [];
     const exists = new Set(reset ? [] : state.posts.map((item) => item.cid));
     const merged = reset ? [] : [...state.posts];
@@ -290,6 +305,10 @@ async function loadPosts({ reset = true } = {}) {
     renderList();
     el.listLoading.hidden = true;
   } catch (error) {
+    if (seq !== listSeq) {
+      return;
+    }
+
     toast(error.message);
 
     if (reset) {
@@ -305,8 +324,11 @@ async function loadPosts({ reset = true } = {}) {
     // 保留重试机会
     state.hasMore = true;
   } finally {
-    state.listLoading = false;
-    updateListMore();
+    // 只由最新一次请求收尾，避免过期请求把新请求的 loading 状态清掉
+    if (seq === listSeq) {
+      state.listLoading = false;
+      updateListMore();
+    }
   }
 }
 
@@ -860,14 +882,33 @@ function backToList() {
   clearTimeout(state.autosaveTimer);
   state.dirty = false;
   state.draftKey = '';
+
+  // 编辑器是独立视图，此时列表 DOM 还保留着上一次的渲染结果，先记住滚动位置
+  const body = document.getElementById('list-body');
+  const scroll = body ? body.scrollTop : 0;
+
   show('list');
   renderList();
-  loadPosts();
+
+  if (body) {
+    requestAnimationFrame(() => {
+      body.scrollTop = scroll;
+    });
+  }
+
+  // 已经加载过分页就保留；只有空列表（首次进入或上次加载失败）才重新拉取
+  if (!state.posts.length) {
+    loadPosts({ reset: true });
+  }
 }
 
 // ─── 抽屉通用 ────────────────────────────────────────────────────────────
 
+// 抽屉关闭动画延时器：快速连续开关时取消上一次
+let sheetTimer = null;
+
 function showSheet(sheet, mask) {
+  clearTimeout(sheetTimer);
   sheet.hidden = false;
   mask.hidden = false;
   requestAnimationFrame(() => {
@@ -879,7 +920,8 @@ function showSheet(sheet, mask) {
 function hideSheet(sheet, mask) {
   sheet.classList.remove('open');
   mask.classList.remove('open');
-  setTimeout(() => {
+  clearTimeout(sheetTimer);
+  sheetTimer = setTimeout(() => {
     sheet.hidden = true;
     mask.hidden = true;
   }, 260);
