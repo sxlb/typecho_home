@@ -1,6 +1,7 @@
 import './ui.css';
 import { call, uploadImage, getSettings, saveSettings, isConfigured, DEFAULT_SETTINGS } from './api.js';
 import { initEditor, getEditorValue, setEditorValue, destroyEditor, closeEditorSheets } from './editor.js';
+import { initAdmin, openAdmin, handleAdminBack } from './admin.js';
 import {
   newDraftId,
   readDraft,
@@ -22,9 +23,11 @@ const DOWNLOAD_URL = 'https://github.com/sxlb/typecho_home/releases/latest/downl
 const el = {
   views: {
     list: $('#view-list'),
+    admin: $('#view-admin'),
     editor: $('#view-editor'),
     settings: $('#view-settings'),
   },
+  adminEntry: $('#btn-admin'),
   listLoading: $('#list-loading'),
   listEmpty: $('#list-empty'),
   listItems: $('#list-items'),
@@ -67,6 +70,7 @@ const el = {
     mode: $('#set-editor-mode'),
     size: $('#set-editor-size'),
     theme: $('#set-theme'),
+    adminMode: $('#set-admin-mode'),
   },
 };
 
@@ -154,6 +158,13 @@ function applyFontSize(value = getSettings().editorFontSize) {
   document.documentElement.dataset.editorSize = EDITOR_FONT_SIZES.includes(value)
     ? value
     : DEFAULT_SETTINGS.editorFontSize;
+}
+
+/**
+ * 管理模式入口：只控制首页按钮显隐，服务端还有独立的管理接口开关
+ */
+function applyAdminEntry() {
+  el.adminEntry.hidden = (getSettings().adminMode || DEFAULT_SETTINGS.adminMode) !== 'on';
 }
 
 function formatDate(timestamp) {
@@ -1198,6 +1209,7 @@ function openSettings() {
   el.settings.mode.value = settings.editorMode || DEFAULT_SETTINGS.editorMode;
   el.settings.size.value = settings.editorFontSize || DEFAULT_SETTINGS.editorFontSize;
   el.settings.theme.value = settings.theme || DEFAULT_SETTINGS.theme;
+  el.settings.adminMode.value = settings.adminMode || DEFAULT_SETTINGS.adminMode;
   renderVersion();
   show('settings');
 }
@@ -1233,9 +1245,11 @@ function saveSettingsFromForm() {
     editorMode: el.settings.mode.value || DEFAULT_SETTINGS.editorMode,
     editorFontSize: el.settings.size.value || DEFAULT_SETTINGS.editorFontSize,
     theme: el.settings.theme.value || DEFAULT_SETTINGS.theme,
+    adminMode: el.settings.adminMode.value || DEFAULT_SETTINGS.adminMode,
   });
   applyTheme();
   applyFontSize();
+  applyAdminEntry();
 }
 
 function compareVersion(a, b) {
@@ -1303,6 +1317,11 @@ async function checkUpdate(manual = false) {
 function bind() {
   $('#btn-refresh').addEventListener('click', () => loadPosts());
   $('#btn-settings').addEventListener('click', openSettings);
+  $('#btn-admin').addEventListener('click', () => {
+    show('admin');
+    openAdmin();
+  });
+  $('#btn-admin-back').addEventListener('click', () => show('list'));
   $('#btn-new').addEventListener('click', openNew);
   $('#btn-back').addEventListener('click', backToList);
   $('#btn-save').addEventListener('click', () => submit(state.status === 'draft'));
@@ -1460,6 +1479,10 @@ function bind() {
         hideSheet(el.historySheet, el.historyMask);
       } else if (!el.sheet.hidden) {
         closeSheet();
+      } else if (state.view === 'admin') {
+        if (!handleAdminBack()) {
+          show('list');
+        }
       } else if (state.view === 'editor') {
         backToList();
       } else if (state.view === 'settings') {
@@ -1473,6 +1496,7 @@ function bind() {
 
 applyTheme();
 applyFontSize();
+applyAdminEntry();
 
 // 跟随系统时，系统在深浅色之间切换要立即生效
 themeQuery?.addEventListener?.('change', () => {
@@ -1482,6 +1506,7 @@ themeQuery?.addEventListener?.('change', () => {
 });
 
 migrateLegacyDraft();
+initAdmin({ onToast: toast });
 bind();
 
 if (isConfigured()) {

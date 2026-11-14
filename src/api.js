@@ -16,6 +16,8 @@ export const DEFAULT_SETTINGS = {
   editorFontSize: 'normal',
   // 外观：auto 跟随系统 / light 浅色 / dark 深色
   theme: 'auto',
+  // 管理模式：on 显示入口 / off 隐藏入口（服务端还需开启「管理接口」）
+  adminMode: 'off',
 };
 
 const SETTINGS_KEY = 'sxlb.settings';
@@ -136,6 +138,18 @@ export async function call(action, options = {}) {
     signPath,
     rawBody,
   );
+}
+
+/**
+ * 调用管理接口
+ *
+ * 签名路径为 /writer-api/admin/{do}，与服务端 Action 的分发保持一致。
+ *
+ * @param {string} action overview / plugins / pluginConfig / savePluginConfig
+ * @param {{method?: string, query?: Record<string, unknown>, body?: object}} options
+ */
+export async function callAdmin(action, options = {}) {
+  return call(`admin/${action}`, options);
 }
 
 /**

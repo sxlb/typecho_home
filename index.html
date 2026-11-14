@@ -25,6 +25,14 @@
                 <path d="M20 5v6h-6" />
               </svg>
             </button>
+            <button class="icon-btn" id="btn-admin" aria-label="管理" hidden>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="4" width="6" height="6" rx="1.4" />
+                <rect x="14" y="4" width="6" height="6" rx="1.4" />
+                <rect x="4" y="14" width="6" height="6" rx="1.4" />
+                <rect x="14" y="14" width="6" height="6" rx="1.4" />
+              </svg>
+            </button>
             <button class="icon-btn" id="btn-settings" aria-label="设置">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3.2" />
@@ -63,6 +71,46 @@
             <path d="M12 5v14M5 12h14" />
           </svg>
         </button>
+      </section>
+
+      <!-- 管理 -->
+      <section id="view-admin" class="view" hidden>
+        <header class="topbar">
+          <button class="text-btn" id="btn-admin-back">返回</button>
+          <span class="editor-status">管理</span>
+          <div class="topbar-actions">
+            <button class="icon-btn" id="btn-admin-refresh" aria-label="刷新">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 11a8 8 0 1 0-2.3 6.3" />
+                <path d="M20 5v6h-6" />
+              </svg>
+            </button>
+          </div>
+        </header>
+        <main class="admin-body" id="admin-body">
+          <div class="list-loading" id="admin-loading">加载中…</div>
+          <div class="admin-error" id="admin-error" hidden>
+            <p class="empty-title">管理数据加载失败</p>
+            <p class="empty-desc" id="admin-error-text"></p>
+            <button class="btn ghost small" id="btn-admin-retry" type="button">重试</button>
+          </div>
+          <div id="admin-overview" hidden>
+            <div class="stat-grid" id="admin-stats"></div>
+            <h2 class="admin-section-title">插件</h2>
+            <div id="admin-plugins"></div>
+            <p class="settings-hint">
+              管理接口需在博客后台「插件 → SxlbPublisher 设置」中开启；这里的「管理模式」只控制 App 是否显示入口。
+            </p>
+          </div>
+          <div id="admin-config" hidden>
+            <button class="text-btn admin-config-back" id="btn-admin-config-back" type="button">← 插件列表</button>
+            <h2 class="admin-section-title" id="admin-config-title">插件配置</h2>
+            <div id="admin-config-body"></div>
+            <div class="settings-actions">
+              <button class="btn primary" id="btn-admin-config-save" type="button">保存配置</button>
+            </div>
+          </div>
+        </main>
       </section>
 
       <!-- 编辑器 -->
@@ -131,6 +179,13 @@
               <option value="auto">跟随系统</option>
               <option value="light">浅色</option>
               <option value="dark">深色</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">管理模式</span>
+            <select id="set-admin-mode">
+              <option value="off">关闭（首页不显示管理入口）</option>
+              <option value="on">开启（可查看概览与插件配置）</option>
             </select>
           </label>
           <div class="settings-actions">
