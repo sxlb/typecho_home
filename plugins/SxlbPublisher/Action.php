@@ -6,6 +6,8 @@ use Typecho\Config;
 use Typecho\Db;
 use Typecho\Widget;
 use TypechoPlugin\SxlbPublisher\Api\Admin;
+use TypechoPlugin\SxlbPublisher\Api\Comment;
+use TypechoPlugin\SxlbPublisher\Api\Media;
 use TypechoPlugin\SxlbPublisher\Api\Meta;
 use TypechoPlugin\SxlbPublisher\Api\Post;
 use TypechoPlugin\SxlbPublisher\Api\Upload;
@@ -425,8 +427,66 @@ class Action extends Widget implements ActionInterface
 
                 $this->ok(Admin::saveThemeConfig($values));
                 break;
+            case 'comments':
+                $this->ok(Comment::listing(
+                    Db::get(),
+                    max(1, $this->intParam('page', 1)),
+                    min(50, max(1, $this->intParam('size', 20))),
+                    (string) $this->param('status', ''),
+                    $this->intParam('cid')
+                ));
+                break;
+            case 'commentApprove':
+            case 'commentWaiting':
+            case 'commentSpam':
+                $this->requirePost($sub);
+
+                $statusMap = [
+                    'commentApprove' => 'approved',
+                    'commentWaiting' => 'waiting',
+                    'commentSpam' => 'spam',
+                ];
+
+                $this->ok(Comment::mark(Db::get(), $this->intParam('coid'), $statusMap[$sub]));
+                break;
+            case 'commentDelete':
+                $this->requirePost($sub);
+                $this->ok(Comment::delete(Db::get(), $this->intParam('coid')));
+                break;
+            case 'commentReply':
+                $this->requirePost($sub);
+                $this->ok(Comment::reply(
+                    Db::get(),
+                    $this->intParam('coid'),
+                    trim((string) $this->param('text', '')),
+                    max(1, (int) ($this->config->authorId ?? 1)),
+                    (string) $this->request->getIp(),
+                    (string) $this->request->getAgent()
+                ));
+                break;
+            case 'media':
+                $this->ok(Media::listing(
+                    Db::get(),
+                    max(1, $this->intParam('page', 1)),
+                    min(50, max(1, $this->intParam('size', 24)))
+                ));
+                break;
+            case 'mediaDelete':
+                $this->requirePost($sub);
+                $this->ok(Media::delete(Db::get(), $this->intParam('cid')));
+                break;
             default:
                 $this->fail('未知管理接口: ' . $sub, 404);
+        }
+    }
+
+    /**
+     * 写操作统一要求 POST
+     */
+    private function requirePost(string $name)
+    {
+        if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+            $this->fail($name . ' 仅支持 POST', 405);
         }
     }
 

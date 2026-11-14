@@ -16,18 +16,26 @@ const el = {
   errorText: $('#admin-error-text'),
   overview: $('#admin-overview'),
   stats: $('#admin-stats'),
+  content: $('#admin-content'),
   entries: $('#admin-entries'),
   plugins: $('#admin-plugins'),
   config: $('#admin-config'),
   configTitle: $('#admin-config-title'),
   configBody: $('#admin-config-body'),
   save: $('#btn-admin-config-save'),
+  tools: $('#admin-tools'),
+  toolsTitle: $('#admin-tools-title'),
+  toolsFilters: $('#admin-tools-filters'),
+  toolsList: $('#admin-tools-list'),
+  toolsMore: $('#btn-admin-tools-more'),
 };
 
 const state = {
   panel: null, // { kind: 'plugin' | 'site' | 'theme', name?, group?, title }
+  overview: {},
   plugins: [],
   siteGroups: [],
+  tool: null, // { kind: 'comments' | 'media', status, page, items, total, busy }
   loaded: false,
   busy: false,
   pendingOff: '',
@@ -42,6 +50,15 @@ export function initAdmin(options = {}) {
   $('#btn-admin-refresh').addEventListener('click', () => load());
   $('#btn-admin-retry').addEventListener('click', () => load());
   $('#btn-admin-config-back').addEventListener('click', showList);
+  $('#btn-admin-tools-back').addEventListener('click', showList);
+  $('#btn-admin-tools-more').addEventListener('click', () => {
+    if (!state.tool || state.tool.busy) {
+      return;
+    }
+
+    state.tool.page += 1;
+    loadToolPage(false);
+  });
   el.save.addEventListener('click', savePanel);
 }
 
@@ -63,6 +80,11 @@ export async function openAdmin() {
  * @returns {boolean} 是否已消费返回事件
  */
 export function handleAdminBack() {
+  if (state.tool) {
+    showList();
+    return true;
+  }
+
   if (state.panel) {
     showList();
     return true;
@@ -84,6 +106,8 @@ async function load() {
   el.error.hidden = true;
   el.overview.hidden = true;
   el.config.hidden = true;
+  el.tools.hidden = true;
+  state.tool = null;
   el.loading.hidden = false;
   el.loading.textContent = '加载中…';
 
@@ -96,8 +120,10 @@ async function load() {
 
     state.siteGroups = Array.isArray(site?.groups) ? site.groups : [];
     state.plugins = Array.isArray(plugins?.items) ? plugins.items : [];
+    state.overview = overview || {};
 
-    renderStats(overview || {});
+    renderStats(state.overview);
+    renderContent();
     renderEntries();
     renderPlugins();
     state.loaded = true;
@@ -112,8 +138,10 @@ async function load() {
 
 function showList() {
   state.panel = null;
+  state.tool = null;
   clearPendingOff();
   el.config.hidden = true;
+  el.tools.hidden = true;
   el.error.hidden = true;
   el.loading.hidden = true;
   el.overview.hidden = !state.loaded;
@@ -123,6 +151,7 @@ function showError(message) {
   el.loading.hidden = true;
   el.overview.hidden = true;
   el.config.hidden = true;
+  el.tools.hidden = true;
   el.error.hidden = false;
   el.errorText.textContent = message || '请检查网络与服务端配置';
 }
@@ -224,6 +253,474 @@ function renderEntries() {
     row.append(info, button);
     el.entries.appendChild(row);
   });
+}
+
+// ─── 内容入口 ────────────────────────────────────────────────────────────
+
+function renderContent() {
+  const overview = state.overview || {};
+  const entries = [
+    {
+      key: 'comments',
+      title: '评论管理',
+      description: overview.pendingComments
+        ? `${overview.pendingComments} 条待审核，共 ${overview.comments || 0} 条`
+        : `共 ${overview.comments || 0} 条评论`,
+    },
+    {
+      key: 'media',
+      title: '媒体库',
+      description: `共 ${overview.media || 0} 个文件`,
+    },
+  ];
+
+  el.content.innerHTML = '';
+
+  entries.forEach((entry) => {
+    const row = document.createElement('div');
+    row.className = 'plugin-item';
+
+    const info = document.createElement('div');
+    info.className = 'plugin-info';
+
+    const title = document.createElement('div');
+    title.className = 'plugin-title';
+    title.textContent = entry.title;
+
+    const desc = document.createElement('div');
+    desc.className = 'plugin-meta';
+    desc.textContent = entry.description;
+
+    info.append(title, desc);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn ghost small';
+    button.textContent = '打开';
+    button.addEventListener('click', () => openTool(entry.key));
+
+    row.append(info, button);
+    el.content.appendChild(row);
+  });
+}
+
+// ─── 评论 / 媒体列表 ─────────────────────────────────────────────────────
+
+const COMMENT_FILTERS = [
+  { key: 'all', label: '全部' },
+  { key: 'waiting', label: '待审核' },
+  { key: 'approved', label: '已通过' },
+  { key: 'spam', label: '垃圾' },
+];
+
+const COMMENT_STATUS = {
+  approved: { label: '已通过', className: 'on' },
+  waiting: { label: '待审核', className: 'wait' },
+  spam: { label: '垃圾', className: 'off' },
+};
+
+function openTool(kind) {
+  const status = kind === 'comments'
+    ? (Number(state.overview?.pendingComments || 0) > 0 ? 'waiting' : 'all')
+    : '';
+
+  state.tool = { kind, status, page: 1, items: [], total: 0, busy: false };
+  state.panel = null;
+
+  el.config.hidden = true;
+  el.error.hidden = true;
+  el.overview.hidden = true;
+  el.tools.hidden = false;
+  el.toolsTitle.textContent = kind === 'comments' ? '评论管理' : '媒体库';
+  el.toolsList.innerHTML = '';
+  el.toolsMore.hidden = true;
+  renderToolFilters();
+  el.body.scrollTop = 0;
+
+  loadToolPage(true);
+}
+
+function renderToolFilters() {
+  el.toolsFilters.innerHTML = '';
+
+  if (state.tool?.kind !== 'comments') {
+    el.toolsFilters.hidden = true;
+    return;
+  }
+
+  el.toolsFilters.hidden = false;
+
+  COMMENT_FILTERS.forEach((filter) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `chip${state.tool.status === filter.key ? ' active' : ''}`;
+    button.textContent = filter.label;
+    button.addEventListener('click', () => {
+      if (state.tool.status === filter.key) {
+        return;
+      }
+
+      state.tool.status = filter.key;
+      state.tool.page = 1;
+      state.tool.items = [];
+      renderToolFilters();
+      loadToolPage(true);
+    });
+
+    el.toolsFilters.appendChild(button);
+  });
+}
+
+async function loadToolPage(reset) {
+  const tool = state.tool;
+
+  if (!tool || tool.busy) {
+    return;
+  }
+
+  tool.busy = true;
+  el.toolsMore.disabled = true;
+  el.toolsMore.textContent = '加载中…';
+
+  try {
+    const query = { page: tool.page, size: tool.kind === 'comments' ? 20 : 24 };
+
+    if (tool.kind === 'comments' && tool.status !== 'all') {
+      query.status = tool.status;
+    }
+
+    const data = await callAdmin(tool.kind === 'comments' ? 'comments' : 'media', { query });
+    const items = Array.isArray(data?.items) ? data.items : [];
+
+    tool.items = reset ? items : tool.items.concat(items);
+    tool.total = Number(data?.total || 0);
+    renderToolItems();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    tool.busy = false;
+    updateMore();
+  }
+}
+
+function updateMore() {
+  const tool = state.tool;
+
+  if (!tool) {
+    el.toolsMore.hidden = true;
+    return;
+  }
+
+  el.toolsMore.disabled = false;
+  el.toolsMore.textContent = '加载更多';
+  el.toolsMore.hidden = tool.items.length === 0 || tool.items.length >= tool.total;
+}
+
+function renderToolItems() {
+  const tool = state.tool;
+
+  if (!tool) {
+    return;
+  }
+
+  el.toolsList.innerHTML = '';
+
+  // 重新渲染前把已展开的回复框状态清空，避免残留
+  if (!tool.items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'plugin-empty';
+    empty.textContent = tool.kind === 'comments' ? '没有符合条件的评论' : '还没有上传过文件';
+    el.toolsList.appendChild(empty);
+    return;
+  }
+
+  if (tool.kind === 'comments') {
+    tool.items.forEach((item) => el.toolsList.appendChild(renderComment(item)));
+  } else {
+    tool.items.forEach((item) => el.toolsList.appendChild(renderMedia(item)));
+  }
+}
+
+function renderComment(item) {
+  const row = document.createElement('div');
+  row.className = 'tool-item';
+
+  const head = document.createElement('div');
+  head.className = 'tool-head';
+
+  const author = document.createElement('span');
+  author.className = 'tool-author';
+  author.textContent = item.author || '匿名';
+
+  const status = COMMENT_STATUS[item.status] || { label: item.status, className: 'off' };
+  const badge = document.createElement('span');
+  badge.className = `badge ${status.className}`;
+  badge.textContent = status.label;
+
+  const time = document.createElement('span');
+  time.className = 'tool-time';
+  time.textContent = formatTime(item.created);
+
+  head.append(author, badge, time);
+
+  const title = document.createElement('div');
+  title.className = 'tool-title';
+  title.textContent = item.title ? `《${item.title}》` : '';
+
+  const text = document.createElement('div');
+  text.className = 'tool-text';
+  text.textContent = item.text || '';
+
+  const actions = document.createElement('div');
+  actions.className = 'tool-actions';
+
+  if (item.status !== 'approved') {
+    actions.appendChild(toolButton('通过', 'ghost', () =>
+      runToolAction('commentApprove', { coid: item.coid }, '评论已通过')));
+  }
+
+  if (item.status !== 'waiting') {
+    actions.appendChild(toolButton('待审核', 'ghost', () =>
+      runToolAction('commentWaiting', { coid: item.coid }, '已标记为待审核')));
+  }
+
+  if (item.status !== 'spam') {
+    actions.appendChild(toolButton('垃圾', 'ghost', () =>
+      runToolAction('commentSpam', { coid: item.coid }, '已标记为垃圾')));
+  }
+
+  const replyBox = document.createElement('div');
+  replyBox.className = 'tool-reply';
+  replyBox.hidden = true;
+
+  const replyInput = document.createElement('textarea');
+  replyInput.rows = 2;
+  replyInput.placeholder = '以站长身份回复…';
+
+  const replySend = document.createElement('button');
+  replySend.type = 'button';
+  replySend.className = 'btn primary small';
+  replySend.textContent = '发送回复';
+  replySend.addEventListener('click', () => {
+    const value = replyInput.value.trim();
+
+    if (!value) {
+      toast('回复内容不能为空');
+      return;
+    }
+
+    runToolAction('commentReply', { coid: item.coid, text: value }, '回复已发送');
+  });
+
+  replyBox.append(replyInput, replySend);
+  actions.appendChild(toolButton('回复', 'ghost', () => {
+    replyBox.hidden = !replyBox.hidden;
+
+    if (!replyBox.hidden) {
+      replyInput.focus();
+    }
+  }));
+
+  const remove = toolButton('删除', 'ghost');
+  confirmThen(remove, '确认删除', () =>
+    runToolAction('commentDelete', { coid: item.coid }, '评论已删除'));
+  actions.appendChild(remove);
+
+  row.append(head);
+
+  if (item.title) {
+    row.appendChild(title);
+  }
+
+  row.append(text, actions, replyBox);
+  return row;
+}
+
+function renderMedia(item) {
+  const row = document.createElement('div');
+  row.className = 'tool-item media-item';
+
+  const thumb = document.createElement('div');
+  thumb.className = 'media-thumb';
+
+  if (item.image && item.url) {
+    const img = document.createElement('img');
+    img.src = item.url;
+    img.alt = item.name || '';
+    img.loading = 'lazy';
+    thumb.appendChild(img);
+  } else {
+    thumb.textContent = (item.type || 'file').toUpperCase();
+  }
+
+  const info = document.createElement('div');
+  info.className = 'media-info';
+
+  const title = document.createElement('div');
+  title.className = 'tool-title';
+  title.textContent = item.name || item.title || '未命名文件';
+
+  const meta = document.createElement('div');
+  meta.className = 'tool-meta';
+  meta.textContent = [formatSize(item.size), formatTime(item.created)].filter(Boolean).join(' · ');
+
+  const actions = document.createElement('div');
+  actions.className = 'tool-actions';
+
+  actions.appendChild(toolButton('复制链接', 'ghost', async () => {
+    const ok = await copyText(item.url || '');
+    toast(ok ? '链接已复制' : '复制失败，请长按图片保存');
+  }));
+
+  const remove = toolButton('删除', 'ghost');
+  confirmThen(remove, '确认删除', () =>
+    runToolAction('mediaDelete', { cid: item.cid }, '文件已删除'));
+  actions.appendChild(remove);
+
+  info.append(title, meta, actions);
+  row.append(thumb, info);
+  return row;
+}
+
+function toolButton(label, variant, handler) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `btn ${variant} small`;
+  button.textContent = label;
+
+  if (typeof handler === 'function') {
+    button.addEventListener('click', handler);
+  }
+
+  return button;
+}
+
+/**
+ * 两步确认：第一次点击进入确认态，4 秒内再次点击才执行
+ */
+function confirmThen(button, label, action) {
+  const original = button.textContent;
+  let timer = 0;
+
+  button.addEventListener('click', () => {
+    if (button.dataset.armed === '1') {
+      window.clearTimeout(timer);
+      button.dataset.armed = '';
+      button.textContent = original;
+      button.classList.remove('warn');
+      action();
+      return;
+    }
+
+    button.dataset.armed = '1';
+    button.textContent = label;
+    button.classList.add('warn');
+
+    timer = window.setTimeout(() => {
+      button.dataset.armed = '';
+      button.textContent = original;
+      button.classList.remove('warn');
+    }, 4000);
+  });
+}
+
+async function runToolAction(action, body, message) {
+  const tool = state.tool;
+
+  if (!tool || tool.busy) {
+    return;
+  }
+
+  tool.busy = true;
+
+  try {
+    await callAdmin(action, { method: 'POST', body });
+    toast(message);
+    tool.busy = false;
+    await reloadTool();
+  } catch (error) {
+    toast(error.message);
+    tool.busy = false;
+  }
+}
+
+async function reloadTool() {
+  const tool = state.tool;
+
+  if (!tool) {
+    return;
+  }
+
+  tool.page = 1;
+  await loadToolPage(true);
+  refreshOverview();
+}
+
+async function refreshOverview() {
+  try {
+    const data = await callAdmin('overview');
+    state.overview = data || {};
+    renderStats(state.overview);
+    renderContent();
+  } catch (error) {
+    // 概览刷新失败不影响列表操作
+  }
+}
+
+function formatTime(ts) {
+  if (!ts) {
+    return '';
+  }
+
+  const date = new Date(Number(ts) * 1000);
+  const pad = (value) => String(value).padStart(2, '0');
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} `
+    + `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function formatSize(bytes) {
+  const size = Number(bytes || 0);
+
+  if (size <= 0) {
+    return '';
+  }
+
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function copyText(text) {
+  if (!text) {
+    return false;
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (error) {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+
+    try {
+      return document.execCommand('copy');
+    } catch (fallbackError) {
+      return false;
+    } finally {
+      area.remove();
+    }
+  }
 }
 
 // ─── 插件列表 ────────────────────────────────────────────────────────────

@@ -96,6 +96,8 @@
           </div>
           <div id="admin-overview" hidden>
             <div class="stat-grid" id="admin-stats"></div>
+            <h2 class="admin-section-title">内容</h2>
+            <div id="admin-content"></div>
             <h2 class="admin-section-title">站点</h2>
             <div id="admin-entries"></div>
             <h2 class="admin-section-title">插件</h2>
@@ -110,6 +112,15 @@
             <div id="admin-config-body"></div>
             <div class="settings-actions">
               <button class="btn primary" id="btn-admin-config-save" type="button">保存配置</button>
+            </div>
+          </div>
+          <div id="admin-tools" hidden>
+            <button class="text-btn admin-config-back" id="btn-admin-tools-back" type="button">← 返回</button>
+            <h2 class="admin-section-title" id="admin-tools-title">评论管理</h2>
+            <div class="tool-filters" id="admin-tools-filters"></div>
+            <div id="admin-tools-list"></div>
+            <div class="settings-actions">
+              <button class="btn ghost small" id="btn-admin-tools-more" type="button" hidden>加载更多</button>
             </div>
           </div>
         </main>
