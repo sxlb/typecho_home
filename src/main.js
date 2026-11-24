@@ -71,6 +71,7 @@ const el = {
   shuoshuoItems: $('#shuoshuo-items'),
   shuoshuoMore: $('#shuoshuo-more'),
   shuoshuoSheet: $('#shuoshuo-sheet'),
+  shuoshuoSheetTitle: $('#shuoshuo-sheet-title'),
   shuoshuoMask: $('#shuoshuo-sheet-mask'),
   shuoshuoText: $('#shuoshuo-text'),
   shuoshuoSecret: $('#shuoshuo-secret'),
@@ -1163,6 +1164,8 @@ const shuoshuo = {
   seq: 0,
   images: [],
   submitting: false,
+  // 正在编辑的说说 coid，null 表示新建
+  editing: null,
 };
 
 /**
@@ -1313,6 +1316,16 @@ function createShuoshuoItem(item) {
   remove.className = 'shuoshuo-delete';
   remove.textContent = '删除';
 
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'shuoshuo-delete';
+  edit.textContent = '编辑';
+  edit.addEventListener('click', () => openShuoshuoSheet(item));
+
+  const actions = document.createElement('div');
+  actions.className = 'shuoshuo-actions';
+  actions.append(edit, remove);
+
   // 两步确认：第一次点击进入确认态，4 秒内再点一次才真正删除
   let armed = false;
   let timer = 0;
@@ -1344,7 +1357,7 @@ function createShuoshuoItem(item) {
   });
 
   head.appendChild(meta);
-  head.appendChild(remove);
+  head.appendChild(actions);
   wrap.appendChild(head);
 
   if (item.plain) {
@@ -1372,10 +1385,13 @@ function createShuoshuoItem(item) {
   return wrap;
 }
 
-function openShuoshuoSheet() {
+function openShuoshuoSheet(item = null) {
+  shuoshuo.editing = item ? item.coid : null;
   shuoshuo.images = [];
-  el.shuoshuoText.value = '';
-  el.shuoshuoSecret.checked = false;
+  el.shuoshuoText.value = item ? item.text : '';
+  el.shuoshuoSecret.checked = Boolean(item && item.secret);
+  el.shuoshuoSheetTitle.textContent = item ? '编辑说说' : '发一条说说';
+  $('#btn-shuoshuo-submit').textContent = item ? '保存' : '发布';
   renderShuoshuoUploads();
   showSheet(el.shuoshuoSheet, el.shuoshuoMask);
 
@@ -1384,6 +1400,8 @@ function openShuoshuoSheet() {
 
 function closeShuoshuoSheet() {
   hideSheet(el.shuoshuoSheet, el.shuoshuoMask);
+  shuoshuo.editing = null;
+  shuoshuo.images = [];
 }
 
 function renderShuoshuoUploads() {
@@ -1472,12 +1490,33 @@ async function submitShuoshuo() {
   const images = shuoshuo.images.map((url) => `![](${url})`).join('\n');
   const content = [text, images].filter(Boolean).join('\n\n');
   const button = $('#btn-shuoshuo-submit');
+  const editing = shuoshuo.editing;
 
   shuoshuo.submitting = true;
   button.disabled = true;
-  button.textContent = '发布中…';
+  button.textContent = editing ? '保存中…' : '发布中…';
 
   try {
+    if (editing) {
+      const item = await call('shuoshuoUpdate', {
+        method: 'POST',
+        body: { coid: editing, text: content, secret: el.shuoshuoSecret.checked },
+      });
+
+      closeShuoshuoSheet();
+
+      // 保持原有顺序，避免编辑后条目跳到列表顶部
+      const index = shuoshuo.items.findIndex((row) => row.coid === editing);
+
+      if (index >= 0) {
+        shuoshuo.items[index] = item;
+      }
+
+      renderShuoshuo();
+      toast('已更新');
+      return;
+    }
+
     const item = await call('shuoshuoCreate', {
       method: 'POST',
       body: { text: content, secret: el.shuoshuoSecret.checked },
@@ -1497,7 +1536,7 @@ async function submitShuoshuo() {
   } finally {
     shuoshuo.submitting = false;
     button.disabled = false;
-    button.textContent = '发布';
+    button.textContent = editing ? '保存' : '发布';
   }
 }
 
@@ -3088,7 +3127,7 @@ function bind() {
   $('#btn-shuoshuo').addEventListener('click', openShuoshuo);
   $('#btn-shuoshuo-back').addEventListener('click', () => show('list'));
   $('#btn-shuoshuo-refresh').addEventListener('click', () => loadShuoshuo({ reset: true }));
-  $('#btn-shuoshuo-new').addEventListener('click', openShuoshuoSheet);
+  $('#btn-shuoshuo-new').addEventListener('click', () => openShuoshuoSheet());
   $('#shuoshuo-sheet-close').addEventListener('click', closeShuoshuoSheet);
   $('#shuoshuo-cancel').addEventListener('click', closeShuoshuoSheet);
   el.shuoshuoMask.addEventListener('click', closeShuoshuoSheet);

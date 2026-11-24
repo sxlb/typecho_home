@@ -145,6 +145,73 @@ class Shuoshuo
     }
 
     /**
+     * 编辑一条说说
+     *
+     * 只允许改动时光机页面下站长发布的说说，发布时间与点赞数保持不变。
+     *
+     * @return array 解析后的说说，结构同列表项
+     */
+    public static function update(Db $db, int $coid, string $text, bool $secret): array
+    {
+        $row = $db->fetchRow(
+            $db->select(
+                'coid',
+                'cid',
+                'created',
+                'author',
+                'authorId',
+                'status',
+                'stars'
+            )
+                ->from('table.comments')->where('coid = ?', $coid)->limit(1)
+        );
+
+        if (!$row) {
+            throw new \RuntimeException('说说不存在');
+        }
+
+        $cid = self::pageId($db);
+
+        if (
+            $cid <= 0
+            || (int) $row['cid'] !== $cid
+            || (int) $row['authorId'] <= 0
+        ) {
+            throw new \RuntimeException('只能编辑时光机里的说说');
+        }
+
+        $text = trim(str_replace(["\r\n", "\r"], "\n", $text));
+
+        if ($text === '') {
+            throw new \RuntimeException('说说内容不能为空');
+        }
+
+        if (mb_strlen($text) > self::MAX_LENGTH) {
+            throw new \RuntimeException('说说内容过长，最多 ' . self::MAX_LENGTH . ' 字');
+        }
+
+        if ($secret) {
+            $text = '[secret]' . $text . '[/secret]';
+        }
+
+        $db->query(
+            $db->update('table.comments')->rows(['text' => $text])->where('coid = ?', $coid)
+        );
+        self::clearThemeCache();
+
+        return self::parseItem([
+            'coid' => $coid,
+            'cid' => $cid,
+            'created' => (int) $row['created'],
+            'author' => (string) $row['author'],
+            'authorId' => (int) $row['authorId'],
+            'text' => $text,
+            'status' => (string) $row['status'],
+            'stars' => (int) $row['stars'],
+        ]);
+    }
+
+    /**
      * 删除说说
      *
      * 只允许删除时光机页面下站长发布的说说，避免误删文章评论。

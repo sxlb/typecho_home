@@ -121,6 +121,9 @@ class Action extends Widget implements ActionInterface
                 case 'shuoshuoCreate':
                     $this->shuoshuoCreate();
                     break;
+                case 'shuoshuoUpdate':
+                    $this->shuoshuoUpdate();
+                    break;
                 case 'shuoshuoDelete':
                     $this->shuoshuoDelete();
                     break;
@@ -480,6 +483,24 @@ class Action extends Widget implements ActionInterface
         );
 
         $this->ok($result);
+    }
+
+    private function shuoshuoUpdate()
+    {
+        $this->requirePost('shuoshuoUpdate');
+
+        $coid = $this->intParam('coid');
+
+        if ($coid <= 0) {
+            $this->fail('缺少 coid');
+        }
+
+        $this->ok(Shuoshuo::update(
+            Db::get(),
+            $coid,
+            (string) $this->param('text', ''),
+            (bool) $this->param('secret', false)
+        ));
     }
 
     private function shuoshuoDelete()

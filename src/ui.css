@@ -370,6 +370,13 @@ body {
   font-weight: 600;
 }
 
+/* 编辑 / 删除按钮组 */
+.shuoshuo-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 12px;
+}
+
 .shuoshuo-text {
   margin: 0;
   font-size: 15px;
