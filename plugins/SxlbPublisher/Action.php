@@ -10,6 +10,7 @@ use TypechoPlugin\SxlbPublisher\Api\Comment;
 use TypechoPlugin\SxlbPublisher\Api\Media;
 use TypechoPlugin\SxlbPublisher\Api\Meta;
 use TypechoPlugin\SxlbPublisher\Api\Post;
+use TypechoPlugin\SxlbPublisher\Api\Shuoshuo;
 use TypechoPlugin\SxlbPublisher\Api\Upload;
 use Widget\ActionInterface;
 use Widget\Options;
@@ -110,6 +111,15 @@ class Action extends Widget implements ActionInterface
                     break;
                 case 'summary':
                     $this->summary();
+                    break;
+                case 'shuoshuo':
+                    $this->shuoshuo();
+                    break;
+                case 'shuoshuoCreate':
+                    $this->shuoshuoCreate();
+                    break;
+                case 'shuoshuoDelete':
+                    $this->shuoshuoDelete();
                     break;
                 case 'admin':
                     $this->admin($sub);
@@ -416,6 +426,46 @@ class Action extends Widget implements ActionInterface
             'generated' => (bool) $generated,
             'summary' => $row ? (string) $row['str_value'] : '',
         ]);
+    }
+
+    // ─── 时光机（说说） ────────────────────────────────────────────────────
+
+    private function shuoshuo()
+    {
+        $this->ok(Shuoshuo::listing(
+            Db::get(),
+            max(1, $this->intParam('page', 1)),
+            min(50, max(1, $this->intParam('size', 20)))
+        ));
+    }
+
+    private function shuoshuoCreate()
+    {
+        $this->requirePost('shuoshuoCreate');
+
+        $result = Shuoshuo::create(
+            Db::get(),
+            (string) $this->param('text', ''),
+            (bool) $this->param('secret', false),
+            max(1, (int) ($this->config->authorId ?? 1)),
+            (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+            (string) ($_SERVER['HTTP_USER_AGENT'] ?? '')
+        );
+
+        $this->ok($result);
+    }
+
+    private function shuoshuoDelete()
+    {
+        $this->requirePost('shuoshuoDelete');
+
+        $coid = $this->intParam('coid');
+
+        if ($coid <= 0) {
+            $this->fail('缺少 coid');
+        }
+
+        $this->ok(Shuoshuo::delete(Db::get(), $coid));
     }
 
     // ─── 管理接口 ──────────────────────────────────────────────────────────

@@ -31,6 +31,7 @@ const el = {
   views: {
     list: $('#view-list'),
     admin: $('#view-admin'),
+    shuoshuo: $('#view-shuoshuo'),
     editor: $('#view-editor'),
     settings: $('#view-settings'),
   },
@@ -61,6 +62,15 @@ const el = {
   itemMask: $('#item-mask'),
   itemTitle: $('#item-sheet-title'),
   itemActions: $('#item-actions'),
+  shuoshuoLoading: $('#shuoshuo-loading'),
+  shuoshuoEmpty: $('#shuoshuo-empty'),
+  shuoshuoItems: $('#shuoshuo-items'),
+  shuoshuoMore: $('#shuoshuo-more'),
+  shuoshuoSheet: $('#shuoshuo-sheet'),
+  shuoshuoMask: $('#shuoshuo-sheet-mask'),
+  shuoshuoText: $('#shuoshuo-text'),
+  shuoshuoSecret: $('#shuoshuo-secret'),
+  shuoshuoUploads: $('#shuoshuo-uploads'),
   dialog: $('#dialog'),
   appVersion: $('#app-version'),
   toast: $('#toast'),
@@ -953,6 +963,354 @@ function backToList() {
   }
 }
 
+// ─── 时光机（说说） ──────────────────────────────────────────────────────
+
+const SHUOSHUO_PAGE_SIZE = 20;
+
+const shuoshuo = {
+  items: [],
+  page: 1,
+  hasMore: true,
+  loading: false,
+  seq: 0,
+  images: [],
+  submitting: false,
+};
+
+/**
+ * 打开时光机
+ *
+ * 每次进入都重新拉第一页，保证在网页端发过说说后 App 也能及时看到。
+ */
+function openShuoshuo() {
+  if (!isConfigured()) {
+    openSettings();
+    return;
+  }
+
+  show('shuoshuo');
+  loadShuoshuo({ reset: true });
+}
+
+async function loadShuoshuo({ reset = true } = {}) {
+  if (!isConfigured()) {
+    openSettings();
+    return;
+  }
+
+  if (reset) {
+    shuoshuo.page = 1;
+    shuoshuo.hasMore = true;
+  } else if (!shuoshuo.hasMore || shuoshuo.loading) {
+    return;
+  }
+
+  const seq = (shuoshuo.seq += 1);
+  shuoshuo.loading = true;
+  updateShuoshuoMore();
+
+  if (reset && !shuoshuo.items.length) {
+    el.shuoshuoLoading.hidden = false;
+    el.shuoshuoLoading.textContent = '加载中…';
+  }
+
+  try {
+    const data = await call('shuoshuo', {
+      query: { page: shuoshuo.page, size: SHUOSHUO_PAGE_SIZE },
+    });
+
+    if (seq !== shuoshuo.seq) {
+      return;
+    }
+
+    const items = data.items || [];
+
+    if (reset) {
+      shuoshuo.items = items;
+    } else {
+      const exists = new Set(shuoshuo.items.map((item) => item.coid));
+      items.forEach((item) => {
+        if (!exists.has(item.coid)) {
+          shuoshuo.items.push(item);
+        }
+      });
+    }
+
+    shuoshuo.hasMore =
+      typeof data.total === 'number'
+        ? shuoshuo.items.length < data.total
+        : items.length >= SHUOSHUO_PAGE_SIZE;
+
+    renderShuoshuo();
+  } catch (error) {
+    if (seq !== shuoshuo.seq) {
+      return;
+    }
+
+    toast(error.message);
+
+    if (reset) {
+      shuoshuo.items = [];
+      renderShuoshuo();
+      el.shuoshuoLoading.hidden = false;
+      el.shuoshuoLoading.textContent = '加载失败，下拉重试';
+    } else {
+      shuoshuo.page = Math.max(1, shuoshuo.page - 1);
+    }
+
+    shuoshuo.hasMore = true;
+  } finally {
+    if (seq === shuoshuo.seq) {
+      shuoshuo.loading = false;
+      updateShuoshuoMore();
+    }
+  }
+}
+
+function renderShuoshuo() {
+  updateShuoshuoMore();
+  el.shuoshuoItems.innerHTML = '';
+  el.shuoshuoEmpty.hidden = shuoshuo.items.length > 0;
+  el.shuoshuoLoading.hidden = true;
+
+  const fragment = document.createDocumentFragment();
+
+  shuoshuo.items.forEach((item) => {
+    fragment.appendChild(createShuoshuoItem(item));
+  });
+
+  el.shuoshuoItems.appendChild(fragment);
+}
+
+function updateShuoshuoMore() {
+  if (!el.shuoshuoMore) {
+    return;
+  }
+
+  el.shuoshuoMore.hidden = !shuoshuo.hasMore;
+  el.shuoshuoMore.textContent = shuoshuo.loading ? '加载中…' : '加载更多';
+  el.shuoshuoMore.disabled = shuoshuo.loading;
+}
+
+/**
+ * 单条说说
+ *
+ * 文本直接按纯文本展示，图片交给下方网格，避免把 Markdown 源码露给用户。
+ */
+function createShuoshuoItem(item) {
+  const wrap = document.createElement('article');
+  wrap.className = 'shuoshuo-item';
+
+  const head = document.createElement('div');
+  head.className = 'shuoshuo-head';
+
+  const meta = document.createElement('div');
+  meta.className = 'shuoshuo-meta';
+
+  if (item.secret) {
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = '私密';
+    meta.appendChild(badge);
+  }
+
+  const time = document.createElement('span');
+  time.textContent = formatDate(item.created);
+  meta.appendChild(time);
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'shuoshuo-delete';
+  remove.textContent = '删除';
+
+  // 两步确认：第一次点击进入确认态，4 秒内再点一次才真正删除
+  let armed = false;
+  let timer = 0;
+  remove.addEventListener('click', async () => {
+    if (!armed) {
+      armed = true;
+      remove.textContent = '确认删除';
+      remove.classList.add('armed');
+      timer = window.setTimeout(() => {
+        armed = false;
+        remove.textContent = '删除';
+        remove.classList.remove('armed');
+      }, 4000);
+      return;
+    }
+
+    window.clearTimeout(timer);
+    remove.disabled = true;
+
+    try {
+      await call('shuoshuoDelete', { method: 'POST', body: { coid: item.coid } });
+      shuoshuo.items = shuoshuo.items.filter((row) => row.coid !== item.coid);
+      renderShuoshuo();
+      toast('已删除');
+    } catch (error) {
+      remove.disabled = false;
+      toast(error.message);
+    }
+  });
+
+  head.appendChild(meta);
+  head.appendChild(remove);
+  wrap.appendChild(head);
+
+  if (item.plain) {
+    const text = document.createElement('p');
+    text.className = 'shuoshuo-text';
+    text.textContent = item.plain;
+    wrap.appendChild(text);
+  }
+
+  if (Array.isArray(item.images) && item.images.length) {
+    const grid = document.createElement('div');
+    grid.className = item.images.length === 1 ? 'shuoshuo-images single' : 'shuoshuo-images';
+
+    item.images.forEach((url) => {
+      const image = document.createElement('img');
+      image.src = url;
+      image.alt = '';
+      image.loading = 'lazy';
+      grid.appendChild(image);
+    });
+
+    wrap.appendChild(grid);
+  }
+
+  return wrap;
+}
+
+function openShuoshuoSheet() {
+  shuoshuo.images = [];
+  el.shuoshuoText.value = '';
+  el.shuoshuoSecret.checked = false;
+  renderShuoshuoUploads();
+  showSheet(el.shuoshuoSheet, el.shuoshuoMask);
+
+  window.setTimeout(() => el.shuoshuoText.focus(), 280);
+}
+
+function closeShuoshuoSheet() {
+  hideSheet(el.shuoshuoSheet, el.shuoshuoMask);
+}
+
+function renderShuoshuoUploads() {
+  el.shuoshuoUploads.innerHTML = '';
+  el.shuoshuoUploads.hidden = shuoshuo.images.length === 0;
+
+  shuoshuo.images.forEach((url, index) => {
+    const cell = document.createElement('div');
+    cell.className = 'shuoshuo-upload';
+
+    const image = document.createElement('img');
+    image.src = url;
+    image.alt = '';
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'shuoshuo-upload-remove';
+    remove.setAttribute('aria-label', '移除图片');
+    remove.textContent = '×';
+    remove.addEventListener('click', () => {
+      shuoshuo.images.splice(index, 1);
+      renderShuoshuoUploads();
+    });
+
+    cell.appendChild(image);
+    cell.appendChild(remove);
+    el.shuoshuoUploads.appendChild(cell);
+  });
+}
+
+async function pickShuoshuoImages() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.multiple = true;
+
+  input.addEventListener('change', async () => {
+    const files = [...(input.files || [])];
+
+    if (!files.length) {
+      return;
+    }
+
+    const button = $('#btn-shuoshuo-image');
+    button.disabled = true;
+    button.textContent = '上传中…';
+
+    try {
+      const results = await Promise.allSettled(files.map((file) => uploadImage(file, 0)));
+      let failed = 0;
+
+      results.forEach((result) => {
+        if (result.status === 'fulfilled' && result.value?.url) {
+          shuoshuo.images.push(result.value.url);
+        } else {
+          failed += 1;
+        }
+      });
+
+      renderShuoshuoUploads();
+
+      if (failed) {
+        toast(`${failed} 张图片上传失败`);
+      }
+    } finally {
+      button.disabled = false;
+      button.textContent = '添加图片';
+    }
+  });
+
+  input.click();
+}
+
+async function submitShuoshuo() {
+  if (shuoshuo.submitting) {
+    return;
+  }
+
+  const text = el.shuoshuoText.value.trim();
+
+  if (!text && !shuoshuo.images.length) {
+    toast('先写点什么，或者加一张图片');
+    return;
+  }
+
+  const images = shuoshuo.images.map((url) => `![](${url})`).join('\n');
+  const content = [text, images].filter(Boolean).join('\n\n');
+  const button = $('#btn-shuoshuo-submit');
+
+  shuoshuo.submitting = true;
+  button.disabled = true;
+  button.textContent = '发布中…';
+
+  try {
+    const item = await call('shuoshuoCreate', {
+      method: 'POST',
+      body: { text: content, secret: el.shuoshuoSecret.checked },
+    });
+
+    closeShuoshuoSheet();
+    shuoshuo.items.unshift(item);
+
+    if (state.view !== 'shuoshuo') {
+      show('shuoshuo');
+    }
+
+    renderShuoshuo();
+    toast('已发布');
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    shuoshuo.submitting = false;
+    button.disabled = false;
+    button.textContent = '发布';
+  }
+}
+
 // ─── 抽屉通用 ────────────────────────────────────────────────────────────
 
 // 抽屉关闭动画延时器：快速连续开关时取消上一次
@@ -961,6 +1319,7 @@ let sheetTimer = null;
 /** 所有会盖住页面的弹层，任意一个打开时锁住底层滚动 */
 const OVERLAY_IDS = [
   'sheet',
+  'shuoshuo-sheet',
   'history-sheet',
   'item-sheet',
   'theme-sheet',
@@ -1489,11 +1848,68 @@ async function checkUpdate(manual = false) {
   }
 }
 
+/**
+ * 列表下拉刷新
+ *
+ * 只有滚到顶部、接近垂直下拉且没有弹层打开时才触发，避免误触。
+ */
+function bindPullRefresh(node, action) {
+  if (!node) {
+    return;
+  }
+
+  let pullStart = null;
+
+  node.addEventListener('touchstart', (event) => {
+    // 多指缩放 / 双指手势不参与刷新判定
+    pullStart = event.touches.length > 1
+      ? null
+      : { x: event.touches[0].clientX, y: event.touches[0].clientY };
+  }, { passive: true });
+
+  node.addEventListener('touchmove', (event) => {
+    if (event.touches.length > 1) {
+      pullStart = null;
+    }
+  }, { passive: true });
+
+  node.addEventListener('touchend', (event) => {
+    const start = pullStart;
+    pullStart = null;
+
+    if (!start || event.touches.length || document.body.classList.contains('modal-open')) {
+      return;
+    }
+
+    const touch = event.changedTouches[0];
+    const deltaY = touch.clientY - start.y;
+    const deltaX = Math.abs(touch.clientX - start.x);
+
+    // 只有接近垂直的下拉才触发，横向滑动（切换/滚动）和斜滑一律忽略
+    if (deltaY > 90 && deltaY > deltaX * 1.5 && node.scrollTop === 0) {
+      action();
+    }
+  }, { passive: true });
+}
+
 // ─── 事件绑定 ────────────────────────────────────────────────────────────
 
 function bind() {
   $('#btn-refresh').addEventListener('click', () => loadPosts());
   $('#btn-settings').addEventListener('click', openSettings);
+  $('#btn-shuoshuo').addEventListener('click', openShuoshuo);
+  $('#btn-shuoshuo-back').addEventListener('click', () => show('list'));
+  $('#btn-shuoshuo-refresh').addEventListener('click', () => loadShuoshuo({ reset: true }));
+  $('#btn-shuoshuo-new').addEventListener('click', openShuoshuoSheet);
+  $('#shuoshuo-sheet-close').addEventListener('click', closeShuoshuoSheet);
+  $('#shuoshuo-cancel').addEventListener('click', closeShuoshuoSheet);
+  el.shuoshuoMask.addEventListener('click', closeShuoshuoSheet);
+  $('#btn-shuoshuo-image').addEventListener('click', pickShuoshuoImages);
+  $('#btn-shuoshuo-submit').addEventListener('click', submitShuoshuo);
+  el.shuoshuoMore.addEventListener('click', () => {
+    shuoshuo.page += 1;
+    loadShuoshuo({ reset: false });
+  });
   $('#btn-admin').addEventListener('click', () => {
     show('admin');
     openAdmin();
@@ -1659,39 +2075,8 @@ function bind() {
   });
 
   // 列表下拉刷新（简版：滚到顶部再下拉触发）
-  let pullStart = null;
-  const listBody = $('#list-body');
-
-  listBody.addEventListener('touchstart', (event) => {
-    // 多指缩放 / 双指手势不参与刷新判定
-    pullStart = event.touches.length > 1
-      ? null
-      : { x: event.touches[0].clientX, y: event.touches[0].clientY };
-  }, { passive: true });
-
-  listBody.addEventListener('touchmove', (event) => {
-    if (event.touches.length > 1) {
-      pullStart = null;
-    }
-  }, { passive: true });
-
-  listBody.addEventListener('touchend', (event) => {
-    const start = pullStart;
-    pullStart = null;
-
-    if (!start || event.touches.length || document.body.classList.contains('modal-open')) {
-      return;
-    }
-
-    const touch = event.changedTouches[0];
-    const deltaY = touch.clientY - start.y;
-    const deltaX = Math.abs(touch.clientX - start.x);
-
-    // 只有接近垂直的下拉才触发，横向滑动（切换/滚动）和斜滑一律忽略
-    if (deltaY > 90 && deltaY > deltaX * 1.5 && listBody.scrollTop === 0) {
-      loadPosts();
-    }
-  }, { passive: true });
+  bindPullRefresh($('#list-body'), () => loadPosts());
+  bindPullRefresh($('#shuoshuo-body'), () => loadShuoshuo({ reset: true }));
 
   // 安卓物理返回键
   if (window.Capacitor?.isNativePlatform?.()) {
@@ -1700,6 +2085,8 @@ function bind() {
         $('#dialog-cancel').click();
       } else if (closeEditorSheets()) {
         // 编辑器内的主题 / 表格面板已关闭
+      } else if (!el.shuoshuoSheet.hidden) {
+        closeShuoshuoSheet();
       } else if (!el.itemSheet.hidden) {
         closeItemSheet();
       } else if (!el.historySheet.hidden) {
@@ -1712,6 +2099,8 @@ function bind() {
         }
       } else if (state.view === 'editor') {
         backToList();
+      } else if (state.view === 'shuoshuo') {
+        show('list');
       } else if (state.view === 'settings') {
         isConfigured() ? show('list') : App.exitApp();
       } else {

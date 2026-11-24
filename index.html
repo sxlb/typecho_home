@@ -25,6 +25,12 @@
                 <path d="M20 5v6h-6" />
               </svg>
             </button>
+            <button class="icon-btn" id="btn-shuoshuo" aria-label="时光机">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 14a3 3 0 0 1-3 3H9l-4 3v-4.5A3 3 0 0 1 4 13V7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3z" />
+                <path d="M8.5 8.5h7M8.5 12h4.5" />
+              </svg>
+            </button>
             <button class="icon-btn" id="btn-admin" aria-label="管理" hidden>
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="4" y="4" width="6" height="6" rx="1.4" />
@@ -131,6 +137,32 @@
         </main>
       </section>
 
+      <!-- 时光机（说说） -->
+      <section id="view-shuoshuo" class="view" hidden>
+        <header class="topbar">
+          <button class="text-btn" id="btn-shuoshuo-back">返回</button>
+          <span class="editor-status">时光机</span>
+          <div class="topbar-actions">
+            <button class="icon-btn" id="btn-shuoshuo-refresh" aria-label="刷新">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 11a8 8 0 1 0-2.3 6.3" />
+                <path d="M20 5v6h-6" />
+              </svg>
+            </button>
+            <button class="text-btn accent" id="btn-shuoshuo-new" type="button">发布</button>
+          </div>
+        </header>
+        <main class="list-body" id="shuoshuo-body">
+          <div class="list-loading" id="shuoshuo-loading">加载中…</div>
+          <div class="empty" id="shuoshuo-empty" hidden>
+            <p class="empty-title">还没有说说</p>
+            <p class="empty-desc">点右上角「发布」记录一条</p>
+          </div>
+          <div id="shuoshuo-items"></div>
+          <button class="list-more" id="shuoshuo-more" type="button" hidden>加载更多</button>
+        </main>
+      </section>
+
       <!-- 编辑器 -->
       <section id="view-editor" class="view" hidden>
         <header class="topbar editor-topbar">
@@ -221,6 +253,42 @@
         </main>
       </section>
     </div>
+
+    <!-- 说说发布抽屉 -->
+    <div class="sheet-mask" id="shuoshuo-sheet-mask" hidden></div>
+    <aside class="sheet" id="shuoshuo-sheet" hidden aria-hidden="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <span>发一条说说</span>
+        <button class="icon-btn" id="shuoshuo-sheet-close" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <textarea
+          class="shuoshuo-editor"
+          id="shuoshuo-text"
+          rows="6"
+          maxlength="65525"
+          placeholder="此刻在想什么…支持 Markdown"
+        ></textarea>
+        <div class="shuoshuo-tools">
+          <button class="btn ghost small" id="btn-shuoshuo-image" type="button">添加图片</button>
+          <label class="switch-row">
+            <input type="checkbox" id="shuoshuo-secret" />
+            <span>私密（仅自己可见）</span>
+          </label>
+        </div>
+        <div class="shuoshuo-uploads" id="shuoshuo-uploads" hidden></div>
+        <p class="settings-hint">图片会以 Markdown 插入到说说末尾，与网页端时光机保持一致。</p>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn ghost" id="shuoshuo-cancel" type="button">取消</button>
+        <button class="btn primary" id="btn-shuoshuo-submit" type="button">发布</button>
+      </div>
+    </aside>
 
     <!-- 发布抽屉 -->
     <div class="sheet-mask" id="sheet-mask" hidden></div>
