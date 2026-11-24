@@ -104,6 +104,10 @@ const el = {
   statsGrid: $('#stats-grid'),
   statsChart: $('#stats-chart'),
   statsCategories: $('#stats-categories'),
+  statsVisitMetrics: $('#stats-visit-metrics'),
+  statsVisitChart: $('#stats-visit-chart'),
+  statsVisitLegend: $('#stats-visit-legend'),
+  statsVisitPages: $('#stats-visit-pages'),
   preview: $('#btn-preview'),
   dialog: $('#dialog'),
   appVersion: $('#app-version'),
@@ -2257,8 +2261,143 @@ function renderStats(data) {
     el.statsGrid.appendChild(item);
   });
 
+  renderStatsVisits(data.visits);
   renderStatsChart(data.trend || []);
   renderStatsCategories(data.categories || []);
+}
+
+function renderStatsVisits(visits) {
+  const metrics = el.statsVisitMetrics;
+  metrics.innerHTML = '';
+  el.statsVisitChart.innerHTML = '';
+  el.statsVisitPages.innerHTML = '';
+  el.statsVisitLegend.hidden = true;
+
+  // 站点未安装 VisitorStats 或从未采集过数据
+  if (!visits || !visits.available) {
+    const empty = document.createElement('p');
+    empty.className = 'stats-empty';
+    empty.textContent = '暂无访问数据（需启用 VisitorStats 插件）';
+    metrics.appendChild(empty);
+    return;
+  }
+
+  [
+    ['今日浏览', visits.today],
+    ['累计浏览', visits.total],
+    ['独立访客', visits.uv],
+  ].forEach(([label, value]) => {
+    const item = document.createElement('div');
+    item.className = 'visit-metric';
+
+    const number = document.createElement('strong');
+    number.className = 'visit-value';
+    number.textContent = String(Number(value || 0));
+
+    const text = document.createElement('span');
+    text.className = 'visit-label';
+    text.textContent = label;
+
+    item.append(number, text);
+    metrics.appendChild(item);
+  });
+
+  el.statsVisitLegend.hidden = !renderStatsVisitChart(visits.trend || []);
+  renderStatsVisitPages(visits.pages || []);
+}
+
+function renderStatsVisitChart(trend) {
+  if (!trend.length || trend.every((day) => !day.pv && !day.uv)) {
+    const empty = document.createElement('p');
+    empty.className = 'stats-empty';
+    empty.textContent = '近 14 天暂无访问记录';
+    el.statsVisitChart.appendChild(empty);
+    return false;
+  }
+
+  const max = Math.max(1, ...trend.map((day) => Math.max(day.pv || 0, day.uv || 0)));
+
+  trend.forEach((day, index) => {
+    const column = document.createElement('div');
+    column.className = 'chart-day';
+
+    const bars = document.createElement('div');
+    bars.className = 'chart-bars';
+
+    [
+      ['pv', Number(day.pv || 0)],
+      ['uv', Number(day.uv || 0)],
+    ].forEach(([kind, value]) => {
+      const bar = document.createElement('i');
+      bar.className = `chart-bar ${kind}`;
+      bar.style.height = `${Math.round((value / max) * 100)}%`;
+      bar.title = `${day.date} · ${kind === 'pv' ? '浏览量' : '独立访客'} ${value}`;
+      bars.appendChild(bar);
+    });
+
+    column.appendChild(bars);
+
+    if (index % 3 === 0 || index === trend.length - 1) {
+      const label = document.createElement('span');
+      label.className = 'chart-label';
+      label.textContent = day.label;
+      column.appendChild(label);
+    }
+
+    el.statsVisitChart.appendChild(column);
+  });
+
+  return true;
+}
+
+function renderStatsVisitPages(pages) {
+  if (!pages.length) {
+    const empty = document.createElement('p');
+    empty.className = 'stats-empty';
+    empty.textContent = '暂无页面访问记录';
+    el.statsVisitPages.appendChild(empty);
+    return;
+  }
+
+  pages.forEach((item, index) => {
+    const row = document.createElement('div');
+    row.className = 'page-row';
+
+    const rank = document.createElement('span');
+    rank.className = 'page-rank';
+    rank.textContent = String(index + 1);
+
+    const info = document.createElement('div');
+    info.className = 'page-info';
+
+    const name = document.createElement('span');
+    name.className = 'page-name';
+    name.textContent = item.title || item.path || '/';
+    info.appendChild(name);
+
+    // 有文章标题时把原始路径作为副标题，便于辨认
+    if (item.title && item.path) {
+      const path = document.createElement('span');
+      path.className = 'page-path';
+      path.textContent = item.path;
+      info.appendChild(path);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'page-meta';
+
+    const pv = document.createElement('strong');
+    pv.className = 'page-pv';
+    pv.textContent = String(Number(item.pv || 0));
+
+    const uv = document.createElement('span');
+    uv.className = 'page-uv';
+    uv.textContent = `UV ${Number(item.uv || 0)}`;
+
+    meta.append(pv, uv);
+    row.append(rank, info, meta);
+    el.statsVisitPages.appendChild(row);
+  });
 }
 
 function renderStatsChart(trend) {

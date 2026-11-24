@@ -10,6 +10,8 @@
   --accent-soft: #eaf3ef;
   --danger: #c2453d;
   --warn: #b8802f;
+  /* 访问统计的浏览量色，与主色（绿）、评论色（黄）区分开 */
+  --info: #3d6f9e;
   --topbar: rgba(246, 245, 242, 0.94);
   --hover: #edeae4;
   --field: #fbfaf8;
@@ -34,6 +36,7 @@
   --accent-soft: rgba(92, 199, 168, 0.14);
   --danger: #e07a70;
   --warn: #d9a45c;
+  --info: #7fb0dd;
   --topbar: rgba(22, 21, 20, 0.92);
   --hover: #2b2926;
   --field: #232220;
@@ -757,6 +760,133 @@ body {
   margin: 6px 0;
   color: var(--ink-3);
   font-size: 13px;
+}
+
+/* 访问统计 */
+
+.visit-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+/* 未安装 VisitorStats 时提示语横跨整行 */
+.visit-metrics > .stats-empty {
+  grid-column: 1 / -1;
+}
+
+.visit-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 12px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+
+.visit-value {
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.visit-label {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.chart-bar.pv {
+  background: var(--info);
+}
+
+.chart-bar.uv {
+  background: var(--accent);
+}
+
+.legend-dot.pv {
+  background: var(--info);
+}
+
+.legend-dot.uv {
+  background: var(--accent);
+}
+
+.page-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.page-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.page-row:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.page-rank {
+  flex: 0 0 auto;
+  width: 16px;
+  color: var(--ink-3);
+  font-size: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.page-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.page-name {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-path {
+  display: block;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-meta {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.page-pv {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.page-uv {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ─── 编辑器 ───────────────────────────────────────────── */
