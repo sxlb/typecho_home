@@ -189,6 +189,31 @@
         </main>
       </section>
 
+      <!-- 友情链接 -->
+      <section id="view-links" class="view" hidden>
+        <header class="topbar">
+          <button class="text-btn" id="btn-links-back">返回</button>
+          <span class="editor-status">友情链接</span>
+          <div class="topbar-actions">
+            <button class="icon-btn" id="btn-links-refresh" aria-label="刷新">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 11a8 8 0 1 0-2.3 6.3" />
+                <path d="M20 5v6h-6" />
+              </svg>
+            </button>
+            <button class="text-btn accent" id="btn-links-new" type="button">新增</button>
+          </div>
+        </header>
+        <main class="list-body" id="links-body">
+          <div class="list-loading" id="links-loading">加载中…</div>
+          <div class="empty" id="links-empty" hidden>
+            <p class="empty-title">还没有友链</p>
+            <p class="empty-desc">点右上角「新增」添加第一条链接</p>
+          </div>
+          <div id="links-items"></div>
+        </main>
+      </section>
+
       <!-- 编辑器 -->
       <section id="view-editor" class="view" hidden>
         <header class="topbar editor-topbar">
@@ -329,6 +354,54 @@
       <div class="sheet-actions">
         <button class="btn ghost" id="page-sheet-cancel" type="button">取消</button>
         <button class="btn primary" id="page-sheet-done" type="button">完成</button>
+      </div>
+    </aside>
+
+    <!-- 友链编辑抽屉 -->
+    <div class="sheet-mask" id="link-sheet-mask" hidden></div>
+    <aside class="sheet" id="link-sheet" hidden aria-hidden="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <span id="link-sheet-title">新增友链</span>
+        <button class="icon-btn" id="link-sheet-close" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <div class="field">
+          <label class="field-label" for="link-name">名称</label>
+          <input id="link-name" type="text" maxlength="60" autocomplete="off" placeholder="站点名称" />
+        </div>
+        <div class="field">
+          <label class="field-label" for="link-url">网址</label>
+          <input id="link-url" type="url" inputmode="url" autocomplete="off" placeholder="https://example.com" />
+        </div>
+        <div class="field">
+          <label class="field-label" for="link-sort">显示位置</label>
+          <select id="link-sort"></select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="link-image">头像 / 图片</label>
+          <input id="link-image" type="url" inputmode="url" autocomplete="off" placeholder="留空使用默认图" />
+        </div>
+        <div class="field">
+          <label class="field-label" for="link-description">描述</label>
+          <textarea id="link-description" rows="3" maxlength="200" placeholder="一句话介绍"></textarea>
+        </div>
+        <div class="field-row">
+          <div class="field half">
+            <label class="field-label" for="link-order">排序</label>
+            <input id="link-order" type="number" min="0" step="1" inputmode="numeric" />
+          </div>
+        </div>
+        <p class="settings-hint">全站链接显示在首页侧边栏；内页 / 推荐链接显示在友链页面；失效链接不输出。</p>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn danger" id="link-delete" type="button" hidden>删除</button>
+        <button class="btn ghost" id="link-sheet-cancel" type="button">取消</button>
+        <button class="btn primary" id="link-sheet-done" type="button">保存</button>
       </div>
     </aside>
 

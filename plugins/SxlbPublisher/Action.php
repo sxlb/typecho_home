@@ -7,6 +7,7 @@ use Typecho\Db;
 use Typecho\Widget;
 use TypechoPlugin\SxlbPublisher\Api\Admin;
 use TypechoPlugin\SxlbPublisher\Api\Comment;
+use TypechoPlugin\SxlbPublisher\Api\Links;
 use TypechoPlugin\SxlbPublisher\Api\Media;
 use TypechoPlugin\SxlbPublisher\Api\Meta;
 use TypechoPlugin\SxlbPublisher\Api\Page;
@@ -133,6 +134,15 @@ class Action extends Widget implements ActionInterface
                     break;
                 case 'pageDelete':
                     $this->pageDelete();
+                    break;
+                case 'links':
+                    $this->links();
+                    break;
+                case 'linkSave':
+                    $this->linkSave();
+                    break;
+                case 'linkDelete':
+                    $this->linkDelete();
                     break;
                 case 'admin':
                     $this->admin($sub);
@@ -526,6 +536,32 @@ class Action extends Widget implements ActionInterface
         }
 
         $this->ok(Page::delete($cid));
+    }
+
+    // ─── 友情链接 ──────────────────────────────────────────────────────────
+
+    private function links()
+    {
+        $this->ok(Links::listing(Db::get()));
+    }
+
+    private function linkSave()
+    {
+        $this->requirePost('linkSave');
+        $this->ok(Links::save(Db::get(), $this->body));
+    }
+
+    private function linkDelete()
+    {
+        $this->requirePost('linkDelete');
+
+        $lid = $this->intParam('lid');
+
+        if ($lid <= 0) {
+            $this->fail('缺少链接 ID');
+        }
+
+        $this->ok(Links::delete(Db::get(), $lid));
     }
 
     // ─── 管理接口 ──────────────────────────────────────────────────────────

@@ -44,10 +44,12 @@ const state = {
 
 let toast = () => {};
 let onOpenPages = () => {};
+let onOpenLinks = () => {};
 
 export function initAdmin(options = {}) {
   toast = typeof options.onToast === 'function' ? options.onToast : toast;
   onOpenPages = typeof options.onOpenPages === 'function' ? options.onOpenPages : onOpenPages;
+  onOpenLinks = typeof options.onOpenLinks === 'function' ? options.onOpenLinks : onOpenLinks;
 
   $('#btn-admin-refresh').addEventListener('click', () => load());
   $('#btn-admin-retry').addEventListener('click', () => load());
@@ -284,6 +286,11 @@ function renderContent() {
       title: '独立页面',
       description: '关于、友链、时光机等自定义页面',
     },
+    {
+      key: 'links',
+      title: '友情链接',
+      description: '增删改友链、设置显示位置与排序',
+    },
   ];
 
   el.content.innerHTML = '';
@@ -312,6 +319,11 @@ function renderContent() {
     button.addEventListener('click', () => {
       if (entry.key === 'pages') {
         onOpenPages();
+        return;
+      }
+
+      if (entry.key === 'links') {
+        onOpenLinks();
         return;
       }
 

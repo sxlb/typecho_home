@@ -34,6 +34,7 @@ const el = {
     admin: $('#view-admin'),
     shuoshuo: $('#view-shuoshuo'),
     pages: $('#view-pages'),
+    links: $('#view-links'),
     editor: $('#view-editor'),
     settings: $('#view-settings'),
   },
@@ -84,6 +85,19 @@ const el = {
   pageOrder: $('#page-order'),
   pageSlug: $('#page-slug'),
   pageAllowComment: $('#page-allow-comment'),
+  linksLoading: $('#links-loading'),
+  linksEmpty: $('#links-empty'),
+  linksItems: $('#links-items'),
+  linkSheet: $('#link-sheet'),
+  linkMask: $('#link-sheet-mask'),
+  linkSheetTitle: $('#link-sheet-title'),
+  linkName: $('#link-name'),
+  linkUrl: $('#link-url'),
+  linkSort: $('#link-sort'),
+  linkImage: $('#link-image'),
+  linkDescription: $('#link-description'),
+  linkOrder: $('#link-order'),
+  linkDelete: $('#link-delete'),
   preview: $('#btn-preview'),
   dialog: $('#dialog'),
   appVersion: $('#app-version'),
@@ -1878,6 +1892,276 @@ async function openInBrowser(url) {
   }
 }
 
+// ─── 友情链接 ────────────────────────────────────────────────────────────
+
+const links = {
+  items: [],
+  sorts: {},
+  loading: false,
+  seq: 0,
+  editing: null,
+  armed: false,
+};
+
+/** 管理页入口打开友链列表 */
+function openLinks() {
+  if (!isConfigured()) {
+    openSettings();
+    return;
+  }
+
+  show('links');
+  loadLinks();
+}
+
+async function loadLinks() {
+  const seq = (links.seq += 1);
+  links.loading = true;
+  el.linksLoading.hidden = links.items.length > 0;
+  el.linksLoading.textContent = '加载中…';
+
+  try {
+    const data = await call('links');
+
+    if (seq !== links.seq) {
+      return;
+    }
+
+    links.items = data.items || [];
+    links.sorts = data.sorts || links.sorts;
+    renderLinks();
+  } catch (error) {
+    if (seq !== links.seq) {
+      return;
+    }
+
+    toast(error.message);
+
+    if (!links.items.length) {
+      el.linksLoading.hidden = false;
+      el.linksLoading.textContent = error.message;
+    }
+  } finally {
+    if (seq === links.seq) {
+      links.loading = false;
+    }
+  }
+}
+
+function renderLinks() {
+  el.linksItems.innerHTML = '';
+  el.linksEmpty.hidden = links.items.length > 0;
+  el.linksLoading.hidden = true;
+
+  if (!links.items.length) {
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  links.items.forEach((item) => {
+    fragment.appendChild(createLinkItem(item));
+  });
+
+  el.linksItems.appendChild(fragment);
+}
+
+function createLinkItem(item) {
+  const row = document.createElement('div');
+  row.className = 'link-item';
+
+  const main = document.createElement('button');
+  main.type = 'button';
+  main.className = 'link-main';
+  main.addEventListener('click', () => openLinkSheet(item));
+
+  const avatar = document.createElement('span');
+  avatar.className = 'link-avatar';
+  const initial = (item.name || '?').trim().slice(0, 1).toUpperCase();
+
+  if (item.image) {
+    const img = document.createElement('img');
+    img.src = item.image;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.addEventListener('error', () => {
+      img.remove();
+      avatar.textContent = initial;
+    });
+    avatar.appendChild(img);
+  } else {
+    avatar.textContent = initial;
+  }
+
+  const body = document.createElement('span');
+  body.className = 'link-body';
+
+  const name = document.createElement('span');
+  name.className = 'link-name';
+  name.textContent = item.name || '未命名链接';
+
+  const url = document.createElement('span');
+  url.className = 'link-url';
+  url.textContent = item.url || '';
+
+  const description = document.createElement('span');
+  description.className = 'link-desc';
+  description.textContent = item.description || '暂无描述';
+
+  body.append(name, url, description);
+
+  const sort = document.createElement('span');
+  sort.className = `badge link-badge${linkSortClass(item.sort)}`;
+  sort.textContent = item.sortName || '未分类';
+
+  main.append(avatar, body, sort);
+  row.appendChild(main);
+
+  return row;
+}
+
+/** 用角标颜色区分输出位置 */
+function linkSortClass(sort) {
+  if (sort === 'ten') {
+    return '';
+  }
+
+  if (sort === 'good') {
+    return ' scheduled';
+  }
+
+  if (sort === 'others') {
+    return ' draft';
+  }
+
+  return ' local';
+}
+
+function renderLinkSortOptions() {
+  const sorts = Object.keys(links.sorts).length
+    ? links.sorts
+    : { ten: '全站链接', one: '内页链接', good: '推荐链接', others: '失效链接' };
+
+  el.linkSort.innerHTML = '';
+
+  Object.entries(sorts).forEach(([value, label]) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    el.linkSort.appendChild(option);
+  });
+}
+
+function openLinkSheet(item) {
+  links.editing = item || null;
+  links.armed = false;
+  renderLinkSortOptions();
+
+  el.linkSheetTitle.textContent = item ? '编辑友链' : '新增友链';
+  el.linkName.value = item ? item.name : '';
+  el.linkUrl.value = item ? item.url : '';
+  el.linkSort.value = item && item.sort ? item.sort : 'ten';
+  el.linkImage.value = item ? item.image : '';
+  el.linkDescription.value = item ? item.description : '';
+  el.linkOrder.value = item ? String(item.order || 0) : '';
+  el.linkDelete.hidden = !item;
+  el.linkDelete.disabled = false;
+  el.linkDelete.textContent = '删除';
+  el.linkDelete.classList.remove('armed');
+
+  showSheet(el.linkSheet, el.linkMask);
+
+  if (!item) {
+    setTimeout(() => el.linkName.focus(), 120);
+  }
+}
+
+function closeLinkSheet() {
+  hideSheet(el.linkSheet, el.linkMask);
+  links.editing = null;
+  links.armed = false;
+}
+
+async function saveLink() {
+  const name = el.linkName.value.trim();
+  const url = el.linkUrl.value.trim();
+
+  if (!name) {
+    toast('请填写链接名称');
+    return;
+  }
+
+  if (!url) {
+    toast('请填写链接地址');
+    return;
+  }
+
+  if (!/^https?:\/\//i.test(url)) {
+    toast('链接地址需以 http:// 或 https:// 开头');
+    return;
+  }
+
+  const image = el.linkImage.value.trim();
+
+  if (image && !/^https?:\/\//i.test(image)) {
+    toast('图片地址需以 http:// 或 https:// 开头');
+    return;
+  }
+
+  const body = {
+    lid: links.editing ? links.editing.lid : 0,
+    name,
+    url,
+    sort: el.linkSort.value || 'ten',
+    image,
+    description: el.linkDescription.value.trim(),
+    order: el.linkOrder.value === '' ? null : Number(el.linkOrder.value),
+  };
+
+  const button = $('#link-sheet-done');
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = '保存中…';
+
+  try {
+    await call('linkSave', { method: 'POST', body });
+    closeLinkSheet();
+    await loadLinks();
+    toast('已保存');
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+async function deleteLink() {
+  if (!links.editing) {
+    return;
+  }
+
+  // 删除不可撤销，第一次点击只进入待确认态
+  if (!links.armed) {
+    links.armed = true;
+    el.linkDelete.textContent = '再次点击确认删除';
+    el.linkDelete.classList.add('armed');
+    return;
+  }
+
+  el.linkDelete.disabled = true;
+
+  try {
+    await call('linkDelete', { method: 'POST', body: { lid: links.editing.lid } });
+    closeLinkSheet();
+    await loadLinks();
+    toast('已删除');
+  } catch (error) {
+    el.linkDelete.disabled = false;
+    toast(error.message);
+  }
+}
+
 // ─── 抽屉通用 ────────────────────────────────────────────────────────────
 
 // 抽屉关闭动画延时器：快速连续开关时取消上一次
@@ -1887,6 +2171,7 @@ let sheetTimer = null;
 const OVERLAY_IDS = [
   'sheet',
   'page-sheet',
+  'link-sheet',
   'shuoshuo-sheet',
   'history-sheet',
   'item-sheet',
@@ -2494,6 +2779,14 @@ function bind() {
   $('#page-sheet-cancel').addEventListener('click', closePageSheet);
   el.pageMask.addEventListener('click', closePageSheet);
   $('#page-sheet-done').addEventListener('click', applyPageSheet);
+  $('#btn-links-back').addEventListener('click', () => show('admin'));
+  $('#btn-links-refresh').addEventListener('click', loadLinks);
+  $('#btn-links-new').addEventListener('click', () => openLinkSheet(null));
+  el.linkMask.addEventListener('click', closeLinkSheet);
+  $('#link-sheet-close').addEventListener('click', closeLinkSheet);
+  $('#link-sheet-cancel').addEventListener('click', closeLinkSheet);
+  $('#link-sheet-done').addEventListener('click', saveLink);
+  el.linkDelete.addEventListener('click', deleteLink);
   $('#btn-preview').addEventListener('click', () => openInBrowser(state.currentUrl));
   $('#btn-new').addEventListener('click', openNew);
   $('#btn-back').addEventListener('click', backToList);
@@ -2670,6 +2963,7 @@ function bind() {
   bindPullRefresh($('#list-body'), () => loadPosts());
   bindPullRefresh($('#shuoshuo-body'), () => loadShuoshuo({ reset: true }));
   bindPullRefresh($('#pages-body'), () => loadPages({ reset: true }));
+  bindPullRefresh($('#links-body'), () => loadLinks());
 
   // 安卓物理返回键
   if (window.Capacitor?.isNativePlatform?.()) {
@@ -2682,6 +2976,8 @@ function bind() {
         closeShuoshuoSheet();
       } else if (!el.pageSheet.hidden) {
         closePageSheet();
+      } else if (!el.linkSheet.hidden) {
+        closeLinkSheet();
       } else if (!el.itemSheet.hidden) {
         closeItemSheet();
       } else if (!el.historySheet.hidden) {
@@ -2698,6 +2994,8 @@ function bind() {
         show('list');
       } else if (state.view === 'pages') {
         closePages();
+      } else if (state.view === 'links') {
+        show('admin');
       } else if (state.view === 'settings') {
         isConfigured() ? show('list') : App.exitApp();
       } else {
@@ -2719,7 +3017,11 @@ themeQuery?.addEventListener?.('change', () => {
 });
 
 migrateLegacyDraft();
-initAdmin({ onToast: toast, onOpenPages: () => openPages('admin') });
+initAdmin({
+  onToast: toast,
+  onOpenPages: () => openPages('admin'),
+  onOpenLinks: openLinks,
+});
 bind();
 
 if (isConfigured()) {
