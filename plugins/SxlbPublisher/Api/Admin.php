@@ -420,6 +420,56 @@ class Admin
         return $data;
     }
 
+    /**
+     * 清理主题缓存
+     *
+     * Handsome 会把页面渲染结果缓存成文件，改完设置、友链或说说后需要清一次，
+     * 前台才能立即看到。主题没有 cache_util.php 时明确报错，不静默成功。
+     *
+     * @return array{cleared: bool, theme: string}
+     */
+    public static function clearCache(): array
+    {
+        $theme = (string) Options::alloc()->theme;
+
+        // Handsome 的缓存工具在插件目录（大写），部分主题则放在主题目录，
+        // 这里按顺序探测，兼容两种布局。
+        $candidates = [
+            self::pluginDir() . '/Handsome/cache/driver/controller/cache_util.php',
+            self::pluginDir() . '/' . $theme . '/cache/driver/controller/cache_util.php',
+            __TYPECHO_ROOT_DIR__ . '/usr/themes/' . $theme . '/cache/driver/controller/cache_util.php',
+        ];
+
+        $file = '';
+
+        foreach ($candidates as $candidate) {
+            if (is_file($candidate)) {
+                $file = $candidate;
+                break;
+            }
+        }
+
+        if ($file === '') {
+            throw new \RuntimeException('当前主题没有可用的缓存清理接口');
+        }
+
+        require_once $file;
+
+        if (!class_exists('\\CacheUtil')) {
+            throw new \RuntimeException('未找到缓存清理类');
+        }
+
+        $cache = new \CacheUtil(null, false);
+
+        if (!method_exists($cache, 'cacheClear')) {
+            throw new \RuntimeException('缓存清理方法不可用');
+        }
+
+        $cache->cacheClear();
+
+        return ['cleared' => true, 'theme' => $theme];
+    }
+
     // ─── 内部实现 ──────────────────────────────────────────────────────────
 
     private static function pluginDir(): string

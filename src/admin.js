@@ -227,6 +227,12 @@ function renderEntries() {
     description: '当前主题的配置项',
   });
 
+  entries.push({
+    key: 'cache',
+    title: '清理主题缓存',
+    description: '删除 Handsome 渲染缓存，前台立即刷新',
+  });
+
   entries.forEach((entry) => {
     const row = document.createElement('div');
     row.className = 'plugin-item';
@@ -247,17 +253,62 @@ function renderEntries() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn ghost small';
-    button.textContent = '打开';
-    button.addEventListener('click', () => {
-      if (entry.key === 'theme') {
-        openPanel({ kind: 'theme', title: '主题设置' });
-      } else {
-        openPanel({ kind: 'site', group: entry.key, title: entry.title });
-      }
-    });
+
+    if (entry.key === 'cache') {
+      button.textContent = '清理';
+      bindClearCache(button);
+    } else {
+      button.textContent = '打开';
+      button.addEventListener('click', () => {
+        if (entry.key === 'theme') {
+          openPanel({ kind: 'theme', title: '主题设置' });
+        } else {
+          openPanel({ kind: 'site', group: entry.key, title: entry.title });
+        }
+      });
+    }
 
     row.append(info, button);
     el.entries.appendChild(row);
+  });
+}
+
+/**
+ * 清理主题缓存
+ *
+ * 两步确认防误触：第一次点击变成「确认清理」，4 秒内不点自动还原。
+ */
+function bindClearCache(button) {
+  let armed = false;
+  let timer = 0;
+
+  const reset = () => {
+    armed = false;
+    button.textContent = '清理';
+  };
+
+  button.addEventListener('click', async () => {
+    if (!armed) {
+      armed = true;
+      button.textContent = '确认清理';
+      timer = window.setTimeout(reset, 4000);
+      return;
+    }
+
+    window.clearTimeout(timer);
+    armed = false;
+    button.disabled = true;
+    button.textContent = '清理中…';
+
+    try {
+      await callAdmin('clearCache', { method: 'POST', body: {} });
+      toast('主题缓存已清理');
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = '清理';
+    }
   });
 }
 

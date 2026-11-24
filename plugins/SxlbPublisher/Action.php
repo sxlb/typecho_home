@@ -680,6 +680,13 @@ class Action extends Widget implements ActionInterface
 
                 $this->ok(Admin::saveThemeConfig($values));
                 break;
+            case 'clearCache':
+                if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+                    $this->fail('clearCache 仅支持 POST', 405);
+                }
+
+                $this->ok(Admin::clearCache());
+                break;
             case 'comments':
                 $this->ok(Comment::listing(
                     Db::get(),
