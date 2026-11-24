@@ -214,6 +214,42 @@
         </main>
       </section>
 
+      <!-- 数据看板 -->
+      <section id="view-stats" class="view" hidden>
+        <header class="topbar">
+          <button class="text-btn" id="btn-stats-back">返回</button>
+          <span class="editor-status">数据看板</span>
+          <div class="topbar-actions">
+            <button class="icon-btn" id="btn-stats-refresh" aria-label="刷新">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 11a8 8 0 1 0-2.3 6.3" />
+                <path d="M20 5v6h-6" />
+              </svg>
+            </button>
+          </div>
+        </header>
+        <main class="list-body" id="stats-body">
+          <div class="list-loading" id="stats-loading">加载中…</div>
+          <div id="stats-content" hidden>
+            <div class="stats-grid" id="stats-grid"></div>
+
+            <section class="panel-card">
+              <h2 class="panel-title">近 14 天动态</h2>
+              <div class="chart" id="stats-chart"></div>
+              <div class="chart-legend">
+                <span><i class="legend-dot post"></i>发布</span>
+                <span><i class="legend-dot comment"></i>评论</span>
+              </div>
+            </section>
+
+            <section class="panel-card">
+              <h2 class="panel-title">分类分布</h2>
+              <div class="cat-list" id="stats-categories"></div>
+            </section>
+          </div>
+        </main>
+      </section>
+
       <!-- 编辑器 -->
       <section id="view-editor" class="view" hidden>
         <header class="topbar editor-topbar">

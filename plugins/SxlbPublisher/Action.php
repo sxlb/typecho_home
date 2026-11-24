@@ -12,6 +12,7 @@ use TypechoPlugin\SxlbPublisher\Api\Media;
 use TypechoPlugin\SxlbPublisher\Api\Meta;
 use TypechoPlugin\SxlbPublisher\Api\Page;
 use TypechoPlugin\SxlbPublisher\Api\Post;
+use TypechoPlugin\SxlbPublisher\Api\Stats;
 use TypechoPlugin\SxlbPublisher\Api\Shuoshuo;
 use TypechoPlugin\SxlbPublisher\Api\Upload;
 use Widget\ActionInterface;
@@ -143,6 +144,9 @@ class Action extends Widget implements ActionInterface
                     break;
                 case 'linkDelete':
                     $this->linkDelete();
+                    break;
+                case 'stats':
+                    $this->stats();
                     break;
                 case 'admin':
                     $this->admin($sub);
@@ -562,6 +566,13 @@ class Action extends Widget implements ActionInterface
         }
 
         $this->ok(Links::delete(Db::get(), $lid));
+    }
+
+    // ─── 数据看板 ──────────────────────────────────────────────────────────
+
+    private function stats()
+    {
+        $this->ok(Stats::dashboard(Db::get(), $this->intParam('days', 14)));
     }
 
     // ─── 管理接口 ──────────────────────────────────────────────────────────

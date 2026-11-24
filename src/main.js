@@ -35,6 +35,7 @@ const el = {
     shuoshuo: $('#view-shuoshuo'),
     pages: $('#view-pages'),
     links: $('#view-links'),
+    stats: $('#view-stats'),
     editor: $('#view-editor'),
     settings: $('#view-settings'),
   },
@@ -98,6 +99,11 @@ const el = {
   linkDescription: $('#link-description'),
   linkOrder: $('#link-order'),
   linkDelete: $('#link-delete'),
+  statsLoading: $('#stats-loading'),
+  statsContent: $('#stats-content'),
+  statsGrid: $('#stats-grid'),
+  statsChart: $('#stats-chart'),
+  statsCategories: $('#stats-categories'),
   preview: $('#btn-preview'),
   dialog: $('#dialog'),
   appVersion: $('#app-version'),
@@ -2162,6 +2168,196 @@ async function deleteLink() {
   }
 }
 
+// ─── 数据看板 ────────────────────────────────────────────────────────────
+
+const stats = {
+  loading: false,
+  seq: 0,
+  data: null,
+};
+
+function openStats() {
+  if (!isConfigured()) {
+    openSettings();
+    return;
+  }
+
+  show('stats');
+  loadStats();
+}
+
+async function loadStats() {
+  const seq = (stats.seq += 1);
+  stats.loading = true;
+
+  if (!stats.data) {
+    el.statsLoading.hidden = false;
+    el.statsLoading.textContent = '加载中…';
+  }
+
+  try {
+    const data = await call('stats');
+
+    if (seq !== stats.seq) {
+      return;
+    }
+
+    stats.data = data;
+    renderStats(data);
+    el.statsLoading.hidden = true;
+    el.statsContent.hidden = false;
+  } catch (error) {
+    if (seq !== stats.seq) {
+      return;
+    }
+
+    toast(error.message);
+
+    if (!stats.data) {
+      el.statsLoading.hidden = false;
+      el.statsLoading.textContent = error.message;
+    }
+  } finally {
+    if (seq === stats.seq) {
+      stats.loading = false;
+    }
+  }
+}
+
+function renderStats(data) {
+  const totals = data.totals || {};
+  const tiles = [
+    { label: '已发布', value: Number(totals.posts || 0) },
+    { label: '草稿', value: Number(totals.drafts || 0) },
+    { label: '独立页面', value: Number(totals.pages || 0) },
+    { label: '评论', value: Number(totals.comments || 0) },
+    { label: '待审核', value: Number(totals.waiting || 0), warn: Number(totals.waiting || 0) > 0 },
+    { label: '媒体', value: Number(totals.media || 0) },
+  ];
+
+  el.statsGrid.innerHTML = '';
+
+  tiles.forEach((tile) => {
+    const item = document.createElement('div');
+    item.className = 'stat-tile';
+
+    const value = document.createElement('strong');
+    value.className = 'stat-value';
+    value.textContent = String(tile.value);
+
+    if (tile.warn) {
+      value.classList.add('warn');
+    }
+
+    const label = document.createElement('span');
+    label.className = 'stat-label';
+    label.textContent = tile.label;
+
+    item.append(value, label);
+    el.statsGrid.appendChild(item);
+  });
+
+  renderStatsChart(data.trend || []);
+  renderStatsCategories(data.categories || []);
+}
+
+function renderStatsChart(trend) {
+  el.statsChart.innerHTML = '';
+
+  if (!trend.length) {
+    const empty = document.createElement('p');
+    empty.className = 'stats-empty';
+    empty.textContent = '暂无趋势数据';
+    el.statsChart.appendChild(empty);
+    return;
+  }
+
+  // 站点近期没有更新时画一排空柱没有意义，直接给一句说明
+  if (trend.every((day) => !day.posts && !day.comments)) {
+    const empty = document.createElement('p');
+    empty.className = 'stats-empty';
+    empty.textContent = '近 14 天没有新的发布或评论';
+    el.statsChart.appendChild(empty);
+    return;
+  }
+
+  const max = Math.max(1, ...trend.map((day) => Math.max(day.posts || 0, day.comments || 0)));
+
+  trend.forEach((day, index) => {
+    const column = document.createElement('div');
+    column.className = 'chart-day';
+
+    const bars = document.createElement('div');
+    bars.className = 'chart-bars';
+
+    [
+      ['post', Number(day.posts || 0)],
+      ['comment', Number(day.comments || 0)],
+    ].forEach(([kind, value]) => {
+      const bar = document.createElement('i');
+      bar.className = `chart-bar ${kind}`;
+      bar.style.height = `${Math.round((value / max) * 100)}%`;
+      bar.title = `${day.date} · ${kind === 'post' ? '发布' : '评论'} ${value}`;
+      bars.appendChild(bar);
+    });
+
+    column.appendChild(bars);
+
+    // 日期标签太密会挤在一起，每 3 天显示一次并保证最后一天有标签
+    if (index % 3 === 0 || index === trend.length - 1) {
+      const label = document.createElement('span');
+      label.className = 'chart-label';
+      label.textContent = day.label;
+      column.appendChild(label);
+    }
+
+    el.statsChart.appendChild(column);
+  });
+}
+
+function renderStatsCategories(categories) {
+  el.statsCategories.innerHTML = '';
+
+  if (!categories.length) {
+    const empty = document.createElement('p');
+    empty.className = 'stats-empty';
+    empty.textContent = '暂无分类数据';
+    el.statsCategories.appendChild(empty);
+    return;
+  }
+
+  const max = Math.max(1, ...categories.map((item) => Number(item.count || 0)));
+
+  categories.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'cat-row';
+
+    const head = document.createElement('div');
+    head.className = 'cat-head';
+
+    const name = document.createElement('span');
+    name.className = 'cat-name';
+    name.textContent = item.name || '未命名分类';
+
+    const count = document.createElement('span');
+    count.className = 'cat-count';
+    count.textContent = String(item.count || 0);
+
+    head.append(name, count);
+
+    const track = document.createElement('div');
+    track.className = 'cat-track';
+
+    const fill = document.createElement('i');
+    fill.className = 'cat-fill';
+    fill.style.width = `${Math.round((Number(item.count || 0) / max) * 100)}%`;
+
+    track.appendChild(fill);
+    row.append(head, track);
+    el.statsCategories.appendChild(row);
+  });
+}
+
 // ─── 抽屉通用 ────────────────────────────────────────────────────────────
 
 // 抽屉关闭动画延时器：快速连续开关时取消上一次
@@ -2787,6 +2983,8 @@ function bind() {
   $('#link-sheet-cancel').addEventListener('click', closeLinkSheet);
   $('#link-sheet-done').addEventListener('click', saveLink);
   el.linkDelete.addEventListener('click', deleteLink);
+  $('#btn-stats-back').addEventListener('click', () => show('admin'));
+  $('#btn-stats-refresh').addEventListener('click', loadStats);
   $('#btn-preview').addEventListener('click', () => openInBrowser(state.currentUrl));
   $('#btn-new').addEventListener('click', openNew);
   $('#btn-back').addEventListener('click', backToList);
@@ -2964,6 +3162,7 @@ function bind() {
   bindPullRefresh($('#shuoshuo-body'), () => loadShuoshuo({ reset: true }));
   bindPullRefresh($('#pages-body'), () => loadPages({ reset: true }));
   bindPullRefresh($('#links-body'), () => loadLinks());
+  bindPullRefresh($('#stats-body'), () => loadStats());
 
   // 安卓物理返回键
   if (window.Capacitor?.isNativePlatform?.()) {
@@ -2996,6 +3195,8 @@ function bind() {
         closePages();
       } else if (state.view === 'links') {
         show('admin');
+      } else if (state.view === 'stats') {
+        show('admin');
       } else if (state.view === 'settings') {
         isConfigured() ? show('list') : App.exitApp();
       } else {
@@ -3021,6 +3222,7 @@ initAdmin({
   onToast: toast,
   onOpenPages: () => openPages('admin'),
   onOpenLinks: openLinks,
+  onOpenStats: openStats,
 });
 bind();
 

@@ -45,11 +45,13 @@ const state = {
 let toast = () => {};
 let onOpenPages = () => {};
 let onOpenLinks = () => {};
+let onOpenStats = () => {};
 
 export function initAdmin(options = {}) {
   toast = typeof options.onToast === 'function' ? options.onToast : toast;
   onOpenPages = typeof options.onOpenPages === 'function' ? options.onOpenPages : onOpenPages;
   onOpenLinks = typeof options.onOpenLinks === 'function' ? options.onOpenLinks : onOpenLinks;
+  onOpenStats = typeof options.onOpenStats === 'function' ? options.onOpenStats : onOpenStats;
 
   $('#btn-admin-refresh').addEventListener('click', () => load());
   $('#btn-admin-retry').addEventListener('click', () => load());
@@ -265,6 +267,11 @@ function renderContent() {
   const overview = state.overview || {};
   const entries = [
     {
+      key: 'stats',
+      title: '数据看板',
+      description: '发布、评论趋势与分类分布',
+    },
+    {
       key: 'comments',
       title: '评论管理',
       description: overview.pendingComments
@@ -317,6 +324,11 @@ function renderContent() {
     button.className = 'btn ghost small';
     button.textContent = '打开';
     button.addEventListener('click', () => {
+      if (entry.key === 'stats') {
+        onOpenStats();
+        return;
+      }
+
       if (entry.key === 'pages') {
         onOpenPages();
         return;
