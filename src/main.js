@@ -1050,10 +1050,12 @@ async function loadShuoshuo({ reset = true } = {}) {
     toast(error.message);
 
     if (reset) {
-      shuoshuo.items = [];
-      renderShuoshuo();
-      el.shuoshuoLoading.hidden = false;
-      el.shuoshuoLoading.textContent = '加载失败，下拉重试';
+      // 刷新失败时保留已有内容，只有首次加载失败才展示错误占位
+      if (!shuoshuo.items.length) {
+        renderShuoshuo();
+        el.shuoshuoLoading.hidden = false;
+        el.shuoshuoLoading.textContent = '加载失败，下拉重试';
+      }
     } else {
       shuoshuo.page = Math.max(1, shuoshuo.page - 1);
     }
