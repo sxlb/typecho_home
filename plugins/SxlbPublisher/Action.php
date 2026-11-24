@@ -112,6 +112,9 @@ class Action extends Widget implements ActionInterface
                 case 'delete':
                     $this->delete();
                     break;
+                case 'postBatch':
+                    $this->postBatch();
+                    break;
                 case 'summary':
                     $this->summary();
                     break;
@@ -427,6 +430,38 @@ class Action extends Widget implements ActionInterface
         }
 
         $this->ok(['cid' => $cid, 'deleted' => true]);
+    }
+
+    /**
+     * 批量发布 / 转草稿
+     *
+     * 发布后主题的静态缓存不会自动失效（绕过了 finishPublish 钩子），
+     * 这里尝试清理一次，失败也不影响状态更新本身。
+     */
+    private function postBatch()
+    {
+        $this->requirePost('postBatch');
+
+        $cids = $this->param('cids', []);
+
+        if (!is_array($cids)) {
+            $this->fail('cids 必须是数组');
+        }
+
+        $status = (string) $this->param('status', '');
+        $result = Post::batchStatus(Db::get(), $cids, $status);
+
+        if ($result['count'] > 0 && $status === 'publish') {
+            try {
+                Admin::clearCache();
+                $result['cacheCleared'] = true;
+            } catch (\Throwable $e) {
+                // 主题没有缓存工具时忽略，不影响批量发布结果
+                $result['cacheCleared'] = false;
+            }
+        }
+
+        $this->ok($result);
     }
 
     private function summary()

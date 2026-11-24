@@ -269,6 +269,74 @@ class Post
         ];
     }
 
+    /**
+     * 批量修改文章状态（发布 / 转草稿）
+     *
+     * 只处理真实存在的文章与草稿，独立页面、已删除的 cid 会被跳过。
+     * 不走 PostEdit 是为了避免逐篇重写分类、标签与自定义字段：
+     * 状态切换本身不涉及这些关联数据，直接更新 type / modified 即可。
+     *
+     * @param array $cids 文章 ID 列表
+     * @param string $status publish 发布 / draft 转草稿
+     * @return array{status: string, cids: array, count: int, skipped: int}
+     */
+    public static function batchStatus(Db $db, array $cids, string $status): array
+    {
+        if (!in_array($status, ['publish', 'draft'], true)) {
+            throw new \RuntimeException('批量操作只支持发布或转草稿');
+        }
+
+        $ids = array_values(array_unique(array_filter(
+            array_map('intval', $cids),
+            static function (int $cid): bool {
+                return $cid > 0;
+            }
+        )));
+
+        if (empty($ids)) {
+            throw new \RuntimeException('请先选择文章');
+        }
+
+        if (count($ids) > 50) {
+            throw new \RuntimeException('一次最多处理 50 篇');
+        }
+
+        // cid 已全部转成整数，拼进 IN 不存在注入风险
+        $rows = $db->fetchAll(
+            $db->select('cid', 'type')->from('table.contents')
+                ->where('table.contents.cid IN (' . implode(',', $ids) . ')')
+                ->where('table.contents.status = ?', 'publish')
+        );
+
+        $valid = [];
+
+        foreach ($rows as $row) {
+            if (in_array($row['type'], ['post', 'post_draft'], true)) {
+                $valid[] = (int) $row['cid'];
+            }
+        }
+
+        if (empty($valid)) {
+            return ['status' => $status, 'cids' => [], 'count' => 0, 'skipped' => count($ids)];
+        }
+
+        $db->query(
+            $db->update('table.contents')
+                ->rows([
+                    'type' => $status === 'draft' ? 'post_draft' : 'post',
+                    'modified' => time(),
+                ])
+                ->where('table.contents.cid IN (' . implode(',', $valid) . ')')
+        );
+
+        return [
+            'status' => $status,
+            'cids' => $valid,
+            'count' => count($valid),
+            'skipped' => count($ids) - count($valid),
+        ];
+    }
+
     // ─── 内部方法 ──────────────────────────────────────────────────────────
 
     /**

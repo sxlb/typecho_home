@@ -19,6 +19,14 @@
             <h1>写作</h1>
           </div>
           <div class="topbar-actions">
+            <button class="icon-btn" id="btn-select" aria-label="批量选择">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 6h10M10 12h10M10 18h10" />
+                <path d="m4 6 1.4 1.4L8 4.8" />
+                <path d="m4 12 1.4 1.4L8 10.8" />
+                <path d="m4 18 1.4 1.4L8 16.8" />
+              </svg>
+            </button>
             <button class="icon-btn" id="btn-refresh" aria-label="刷新">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 11a8 8 0 1 0-2.3 6.3" />
@@ -82,6 +90,15 @@
             <path d="M12 5v14M5 12h14" />
           </svg>
         </button>
+        <!-- 批量操作条：进入多选模式后从底部浮出 -->
+        <div class="batch-bar" id="batch-bar" hidden>
+          <button class="batch-all" id="batch-all" type="button">全选</button>
+          <span class="batch-count" id="batch-count">已选 0 篇</span>
+          <div class="batch-actions">
+            <button class="btn ghost small" id="batch-draft" type="button">转草稿</button>
+            <button class="btn primary small" id="batch-publish" type="button">发布</button>
+          </div>
+        </div>
       </section>
 
       <!-- 管理 -->

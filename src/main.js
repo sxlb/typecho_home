@@ -47,6 +47,12 @@ const el = {
   listSearch: $('#list-search'),
   listFilters: $('#list-filters'),
   listCategory: $('#list-category'),
+  selectBtn: $('#btn-select'),
+  batchBar: $('#batch-bar'),
+  batchAll: $('#batch-all'),
+  batchCount: $('#batch-count'),
+  batchDraft: $('#batch-draft'),
+  batchPublish: $('#batch-publish'),
   title: $('#post-title'),
   editorStatus: $('#editor-status'),
   sheet: $('#sheet'),
@@ -168,6 +174,9 @@ const state = {
   allowWarnings: false,
   checkDraft: true,
   quotaWarned: false,
+  // 批量选择模式：只对已同步到服务端的文章 / 草稿生效
+  selecting: false,
+  selectedCids: new Set(),
 };
 
 // ─── 通用 ────────────────────────────────────────────────────────────────
@@ -414,13 +423,16 @@ function localDraftItems() {
   return listDrafts().filter((draft) => String(draft.id).startsWith('draft-'));
 }
 
-function renderList() {
+/**
+ * 当前筛选条件下应展示的服务端文章
+ *
+ * 「全选」与列表渲染共用同一套过滤规则，避免出现「看得见却选不中」。
+ */
+function visibleServerItems() {
   const keyword = state.query.trim().toLowerCase();
   const { filter } = state;
 
-  updateListMore();
-
-  const serverItems = state.posts.filter((item) => {
+  return state.posts.filter((item) => {
     if (filter === 'local') {
       return false;
     }
@@ -439,6 +451,15 @@ function renderList() {
 
     return !keyword || String(item.title || '').toLowerCase().includes(keyword);
   });
+}
+
+function renderList() {
+  const keyword = state.query.trim().toLowerCase();
+  const { filter } = state;
+
+  updateListMore();
+
+  const serverItems = visibleServerItems();
 
   const showLocal = filter === 'all' || filter === 'local' || filter === 'draft';
   const drafts = showLocal
@@ -461,6 +482,11 @@ function renderList() {
 
   if (!drafts.length && !serverItems.length) {
     el.listEmpty.hidden = false;
+
+    if (state.selecting) {
+      updateBatchBar();
+    }
+
     return;
   }
 
@@ -504,6 +530,10 @@ function renderList() {
 
   el.listItems.appendChild(fragment);
   el.listLoading.hidden = true;
+
+  if (state.selecting) {
+    updateBatchBar();
+  }
 }
 
 /** 「加载更多」只在远端还有下一页且当前不是本地草稿筛选时出现 */
@@ -521,6 +551,9 @@ function createItem({ title, badge, time, item }) {
   const wrap = document.createElement('div');
   wrap.className = 'post-item';
 
+  // 本地草稿还没同步到服务端，无法批量改状态，保持正常打开行为
+  const selectable = state.selecting && !item.local;
+
   const main = document.createElement('button');
   main.type = 'button';
   main.className = 'post-main';
@@ -528,6 +561,11 @@ function createItem({ title, badge, time, item }) {
   main.querySelector('.post-title').textContent = title;
   main.querySelector('.post-meta').innerHTML = `${badge}<span>${time}</span>`;
   main.addEventListener('click', () => {
+    if (selectable) {
+      toggleSelect(item.cid, wrap);
+      return;
+    }
+
     if (item.local) {
       if (item.kind === 'page') {
         openLocalPageDraft(item.id);
@@ -541,6 +579,19 @@ function createItem({ title, badge, time, item }) {
     }
   });
 
+  if (selectable) {
+    wrap.classList.add('selectable');
+
+    if (state.selectedCids.has(item.cid)) {
+      wrap.classList.add('selected');
+    }
+
+    const check = document.createElement('span');
+    check.className = 'post-check';
+    check.textContent = '✓';
+    wrap.appendChild(check);
+  }
+
   const more = document.createElement('button');
   more.type = 'button';
   more.className = 'post-more';
@@ -552,9 +603,108 @@ function createItem({ title, badge, time, item }) {
   });
 
   wrap.appendChild(main);
-  wrap.appendChild(more);
+
+  // 多选模式下「更多」让位给勾选框，避免误触
+  if (!state.selecting) {
+    wrap.appendChild(more);
+  }
 
   return wrap;
+}
+
+// ─── 批量选择 ────────────────────────────────────────────────────────────
+
+let batchArmed = false;
+let batchTimer = null;
+
+/**
+ * 进 / 出多选模式
+ *
+ * @param {boolean} on
+ */
+function setSelectMode(on) {
+  state.selecting = on;
+  state.selectedCids.clear();
+  resetBatchConfirm();
+
+  el.views.list.classList.toggle('selecting', on);
+  el.batchBar.hidden = !on;
+  el.selectBtn.classList.toggle('active', on);
+  el.selectBtn.setAttribute('aria-label', on ? '退出批量选择' : '批量选择');
+
+  renderList();
+  updateBatchBar();
+}
+
+function toggleSelect(cid, node) {
+  if (state.selectedCids.has(cid)) {
+    state.selectedCids.delete(cid);
+    node.classList.remove('selected');
+  } else {
+    state.selectedCids.add(cid);
+    node.classList.add('selected');
+  }
+
+  resetBatchConfirm();
+  updateBatchBar();
+}
+
+function updateBatchBar() {
+  if (!el.batchBar) {
+    return;
+  }
+
+  const count = state.selectedCids.size;
+  const items = visibleServerItems();
+  const allSelected =
+    items.length > 0 && items.every((item) => state.selectedCids.has(item.cid));
+
+  el.batchCount.textContent = `已选 ${count} 篇`;
+  el.batchAll.textContent = allSelected ? '取消全选' : '全选';
+  el.batchPublish.disabled = count === 0;
+  el.batchDraft.disabled = count === 0;
+}
+
+/** 复位「转草稿」的二次确认状态 */
+function resetBatchConfirm() {
+  batchArmed = false;
+  clearTimeout(batchTimer);
+
+  if (el.batchDraft) {
+    el.batchDraft.textContent = '转草稿';
+    el.batchDraft.classList.remove('armed');
+  }
+}
+
+/**
+ * 执行批量改状态
+ *
+ * @param {'publish'|'draft'} status
+ */
+async function runBatch(status) {
+  const cids = [...state.selectedCids];
+
+  if (!cids.length) {
+    toast('请先选择文章');
+    return;
+  }
+
+  el.batchPublish.disabled = true;
+  el.batchDraft.disabled = true;
+
+  try {
+    const data = await call('postBatch', { method: 'POST', body: { cids, status } });
+    const count = Number(data?.count) || 0;
+    const skipped = Number(data?.skipped) || 0;
+    const label = status === 'publish' ? '已发布' : '已转为草稿';
+
+    setSelectMode(false);
+    await loadPosts({ reset: true });
+    toast(skipped > 0 ? `${label} ${count} 篇，跳过 ${skipped} 篇` : `${label} ${count} 篇`);
+  } catch (error) {
+    toast(error.message);
+    updateBatchBar();
+  }
 }
 
 // ─── 文章操作抽屉 ────────────────────────────────────────────────────────
@@ -3145,6 +3295,38 @@ function bindPullRefresh(node, action) {
 
 function bind() {
   $('#btn-refresh').addEventListener('click', () => loadPosts());
+  el.selectBtn.addEventListener('click', () => setSelectMode(!state.selecting));
+  el.batchAll.addEventListener('click', () => {
+    const items = visibleServerItems();
+    const allSelected =
+      items.length > 0 && items.every((item) => state.selectedCids.has(item.cid));
+
+    items.forEach((item) => {
+      if (allSelected) {
+        state.selectedCids.delete(item.cid);
+      } else {
+        state.selectedCids.add(item.cid);
+      }
+    });
+
+    resetBatchConfirm();
+    renderList();
+    updateBatchBar();
+  });
+  el.batchPublish.addEventListener('click', () => runBatch('publish'));
+  el.batchDraft.addEventListener('click', () => {
+    // 转草稿会让文章从站点消失，加一次二次确认避免误触
+    if (!batchArmed) {
+      batchArmed = true;
+      el.batchDraft.textContent = '确认转草稿？';
+      el.batchDraft.classList.add('armed');
+      batchTimer = setTimeout(resetBatchConfirm, 3000);
+      return;
+    }
+
+    resetBatchConfirm();
+    runBatch('draft');
+  });
   $('#btn-settings').addEventListener('click', openSettings);
   $('#btn-shuoshuo').addEventListener('click', openShuoshuo);
   $('#btn-shuoshuo-back').addEventListener('click', () => show('list'));
