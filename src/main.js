@@ -103,6 +103,8 @@ const el = {
   statsLoading: $('#stats-loading'),
   statsContent: $('#stats-content'),
   statsGrid: $('#stats-grid'),
+  statsRange: $('#stats-range'),
+  statsTrendTitle: $('#stats-trend-title'),
   statsChart: $('#stats-chart'),
   statsCategories: $('#stats-categories'),
   statsVisitMetrics: $('#stats-visit-metrics'),
@@ -2217,6 +2219,8 @@ const stats = {
   loading: false,
   seq: 0,
   data: null,
+  // 看板趋势范围：7 / 14 / 30 天，与接口的 days 参数一致
+  days: 14,
 };
 
 function openStats() {
@@ -2239,7 +2243,7 @@ async function loadStats() {
   }
 
   try {
-    const data = await call('stats');
+    const data = await call('stats', { query: { days: stats.days } });
 
     if (seq !== stats.seq) {
       return;
@@ -2300,6 +2304,9 @@ function renderStats(data) {
     el.statsGrid.appendChild(item);
   });
 
+  const days = Number(data.days || stats.days);
+  el.statsTrendTitle.textContent = `近 ${days} 天动态`;
+
   renderStatsVisits(data.visits);
   renderStatsChart(data.trend || []);
   renderStatsCategories(data.categories || []);
@@ -2355,6 +2362,7 @@ function renderStatsVisitChart(trend) {
   }
 
   const max = Math.max(1, ...trend.map((day) => Math.max(day.pv || 0, day.uv || 0)));
+  const step = chartLabelStep(trend.length);
 
   trend.forEach((day, index) => {
     const column = document.createElement('div');
@@ -2376,7 +2384,7 @@ function renderStatsVisitChart(trend) {
 
     column.appendChild(bars);
 
-    if (index % 3 === 0 || index === trend.length - 1) {
+    if (index % step === 0 || index === trend.length - 1) {
       const label = document.createElement('span');
       label.className = 'chart-label';
       label.textContent = day.label;
@@ -2454,12 +2462,13 @@ function renderStatsChart(trend) {
   if (trend.every((day) => !day.posts && !day.comments)) {
     const empty = document.createElement('p');
     empty.className = 'stats-empty';
-    empty.textContent = '近 14 天没有新的发布或评论';
+    empty.textContent = `近 ${stats.days} 天没有新的发布或评论`;
     el.statsChart.appendChild(empty);
     return;
   }
 
   const max = Math.max(1, ...trend.map((day) => Math.max(day.posts || 0, day.comments || 0)));
+  const step = chartLabelStep(trend.length);
 
   trend.forEach((day, index) => {
     const column = document.createElement('div');
@@ -2481,8 +2490,8 @@ function renderStatsChart(trend) {
 
     column.appendChild(bars);
 
-    // 日期标签太密会挤在一起，每 3 天显示一次并保证最后一天有标签
-    if (index % 3 === 0 || index === trend.length - 1) {
+    // 日期标签太密会挤在一起，按范围疏密显示并保证最后一天有标签
+    if (index % step === 0 || index === trend.length - 1) {
       const label = document.createElement('span');
       label.className = 'chart-label';
       label.textContent = day.label;
@@ -2491,6 +2500,19 @@ function renderStatsChart(trend) {
 
     el.statsChart.appendChild(column);
   });
+}
+
+/**
+ * 图表日期标签的间隔
+ *
+ * 7 天全显示，14 天隔一天，30 天每 5 天，保证大约 6-7 个标签。
+ */
+function chartLabelStep(total) {
+  if (total > 20) {
+    return 5;
+  }
+
+  return total > 10 ? 2 : 1;
 }
 
 function renderStatsCategories(categories) {
@@ -3163,6 +3185,25 @@ function bind() {
   el.linkDelete.addEventListener('click', deleteLink);
   $('#btn-stats-back').addEventListener('click', () => show('admin'));
   $('#btn-stats-refresh').addEventListener('click', loadStats);
+  el.statsRange.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-days]');
+
+    if (!button) {
+      return;
+    }
+
+    const days = Number(button.dataset.days);
+
+    if (!days || days === stats.days) {
+      return;
+    }
+
+    stats.days = days;
+    el.statsRange.querySelectorAll('button').forEach((item) => {
+      item.classList.toggle('active', item === button);
+    });
+    loadStats();
+  });
   $('#btn-preview').addEventListener('click', () => openInBrowser(state.currentUrl));
   $('#btn-new').addEventListener('click', openNew);
   $('#btn-back').addEventListener('click', backToList);

@@ -231,6 +231,11 @@
         <main class="list-body" id="stats-body">
           <div class="list-loading" id="stats-loading">加载中…</div>
           <div id="stats-content" hidden>
+            <div class="stats-range" id="stats-range">
+              <button type="button" data-days="7">7 天</button>
+              <button type="button" data-days="14" class="active">14 天</button>
+              <button type="button" data-days="30">30 天</button>
+            </div>
             <div class="stats-grid" id="stats-grid"></div>
 
             <section class="panel-card">
@@ -245,7 +250,7 @@
             </section>
 
             <section class="panel-card">
-              <h2 class="panel-title">近 14 天动态</h2>
+              <h2 class="panel-title" id="stats-trend-title">近 14 天动态</h2>
               <div class="chart" id="stats-chart"></div>
               <div class="chart-legend">
                 <span><i class="legend-dot post"></i>发布</span>

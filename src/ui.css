@@ -595,6 +595,35 @@ body {
 
 /* ─── 数据看板 ─────────────────────────────────────────── */
 
+/* 看板时间范围切换 */
+
+.stats-range {
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 3px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.stats-range button {
+  min-width: 58px;
+  padding: 6px 10px;
+  color: var(--ink-3);
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+}
+
+.stats-range button.active {
+  color: var(--ink);
+  font-weight: 600;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
