@@ -20,6 +20,7 @@ import {
   migrateLegacyDraft,
 } from './local.js';
 import { App } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -32,6 +33,7 @@ const el = {
     list: $('#view-list'),
     admin: $('#view-admin'),
     shuoshuo: $('#view-shuoshuo'),
+    pages: $('#view-pages'),
     editor: $('#view-editor'),
     settings: $('#view-settings'),
   },
@@ -71,6 +73,18 @@ const el = {
   shuoshuoText: $('#shuoshuo-text'),
   shuoshuoSecret: $('#shuoshuo-secret'),
   shuoshuoUploads: $('#shuoshuo-uploads'),
+  pagesLoading: $('#pages-loading'),
+  pagesEmpty: $('#pages-empty'),
+  pagesItems: $('#pages-items'),
+  pagesMore: $('#pages-more'),
+  pageSheet: $('#page-sheet'),
+  pageMask: $('#page-sheet-mask'),
+  pageTemplate: $('#page-template'),
+  pageStatus: $('#page-status'),
+  pageOrder: $('#page-order'),
+  pageSlug: $('#page-slug'),
+  pageAllowComment: $('#page-allow-comment'),
+  preview: $('#btn-preview'),
   dialog: $('#dialog'),
   appVersion: $('#app-version'),
   toast: $('#toast'),
@@ -96,6 +110,14 @@ const state = {
   view: 'list',
   cid: 0,
   draftKey: '',
+  // 编辑器当前编辑的对象类型：post 文章 / page 独立页面
+  kind: 'post',
+  // 当前对象的线上地址，用于编辑器顶栏预览
+  currentUrl: '',
+  // 页面模式下的模板 / 状态 / 排序 / 链接等设置
+  pageMeta: null,
+  // 页面列表的来源视图，返回时回到管理页或首页
+  pagesFrom: 'list',
   status: 'draft',
   dirty: false,
   metasLoaded: false,
@@ -213,6 +235,17 @@ function formatDateTime(timestamp) {
   const pad = (value) => String(value).padStart(2, '0');
 
   return `${date.getMonth() + 1}月${date.getDate()}日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** 模板名来自主题文件，拼进 innerHTML 前统一转义 */
+function escapeHtml(text) {
+  return String(text ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[ch]);
 }
 
 async function copyText(text) {
@@ -469,7 +502,13 @@ function createItem({ title, badge, time, item }) {
   main.querySelector('.post-meta').innerHTML = `${badge}<span>${time}</span>`;
   main.addEventListener('click', () => {
     if (item.local) {
-      openLocalDraft(item.id);
+      if (item.kind === 'page') {
+        openLocalPageDraft(item.id);
+      } else {
+        openLocalDraft(item.id);
+      }
+    } else if (item.kind === 'page') {
+      openPage(item.cid);
     } else {
       openPost(item.cid);
     }
@@ -512,7 +551,12 @@ function openItemSheet(item) {
   if (item.local) {
     addItemAction('继续编辑', () => {
       closeItemSheet();
-      openLocalDraft(item.id);
+
+      if (item.kind === 'page') {
+        openLocalPageDraft(item.id);
+      } else {
+        openLocalDraft(item.id);
+      }
     });
 
     addItemAction('复制正文', async () => {
@@ -533,8 +577,66 @@ function openItemSheet(item) {
 
         removeDraft(item.id);
         closeItemSheet();
-        renderList();
+
+        if (item.kind === 'page') {
+          renderPages();
+        } else {
+          renderList();
+        }
+
         toast('已删除本地草稿');
+      },
+      true,
+    );
+  } else if (item.kind === 'page') {
+    addItemAction('编辑页面', () => {
+      closeItemSheet();
+      openPage(item.cid);
+    });
+
+    addItemAction('在浏览器打开', async () => {
+      try {
+        const detail = await call('page', { query: { cid: item.cid } });
+        closeItemSheet();
+        await openInBrowser(detail?.url);
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+
+    addItemAction('复制链接', async () => {
+      try {
+        const detail = await call('page', { query: { cid: item.cid } });
+        await copyText(detail?.url || '');
+        closeItemSheet();
+        toast('已复制');
+      } catch (error) {
+        toast(error.message);
+      }
+    });
+
+    let armed = false;
+    const button = addItemAction(
+      '删除页面',
+      async () => {
+        if (!armed) {
+          armed = true;
+          button.textContent = '再次点击确认删除';
+          return;
+        }
+
+        button.disabled = true;
+
+        try {
+          await call('pageDelete', { method: 'POST', body: { cid: item.cid } });
+          removeDraft(`page-${item.cid}`);
+          closeItemSheet();
+          await loadPages({ reset: true });
+          toast('已删除');
+        } catch (error) {
+          button.disabled = false;
+          toast(error.message);
+        }
       },
       true,
     );
@@ -543,6 +645,19 @@ function openItemSheet(item) {
       closeItemSheet();
       openPost(item.cid);
     });
+
+    // 草稿在线上不可访问，预览入口只对草稿以外的文章开放
+    if (item.status !== 'draft') {
+      addItemAction('在浏览器打开', async () => {
+        try {
+          const detail = await call('post', { query: { cid: item.cid } });
+          closeItemSheet();
+          await openInBrowser(detail?.url);
+        } catch (error) {
+          toast(error.message);
+        }
+      });
+    }
 
     addItemAction(item.status === 'draft' ? '复制文章 ID' : '复制文章链接', async () => {
       try {
@@ -736,13 +851,30 @@ function renderCategoryChips() {
   }
 }
 
-function startEditor({ cid, draftKey, title, text, meta }) {
+function startEditor({
+  cid,
+  draftKey,
+  title,
+  text,
+  meta,
+  kind = 'post',
+  url = '',
+  pageMeta = null,
+}) {
   state.cid = cid;
   state.draftKey = draftKey;
+  state.kind = kind;
+  state.currentUrl = url || '';
+  state.pageMeta = pageMeta;
   state.dirty = false;
   el.title.value = title || '';
   fillSheet(meta || {});
-  el.editorStatus.textContent = cid ? '已加载' : '新文章';
+  el.editorStatus.textContent = cid ? '已加载' : kind === 'page' ? '新页面' : '新文章';
+
+  // 页面复用同一套编辑器，但保存语义不同：设置走抽屉，「保存」直接提交
+  $('#btn-save').textContent = kind === 'page' ? '设置' : '保存';
+  $('#btn-publish').textContent = kind === 'page' ? '保存' : '发布';
+  el.preview.hidden = !state.currentUrl;
 
   show('editor');
 
@@ -788,8 +920,9 @@ function persistLocal() {
     return;
   }
 
-  const saved = writeDraft(state.draftKey, {
+  const data = {
     cid: state.cid,
+    kind: state.kind,
     title: el.title.value,
     text: getEditorValue(),
     mid: [...state.selectedMids],
@@ -799,7 +932,18 @@ function persistLocal() {
     reprint: el.reprint.value,
     slug: el.slug.value,
     created: el.created.value,
-  });
+  };
+
+  // 页面没有分类 / 标签，额外保存模板、状态、排序等页面设置
+  if (state.kind === 'page' && state.pageMeta) {
+    data.slug = state.pageMeta.slug || '';
+    data.template = state.pageMeta.template || '';
+    data.status = state.pageMeta.status || 'publish';
+    data.order = Number(state.pageMeta.order || 0);
+    data.allowComment = state.pageMeta.allowComment !== false;
+  }
+
+  const saved = writeDraft(state.draftKey, data);
 
   // 配额溢出时只提示一次，避免每次自动保存都弹 toast
   if (!saved && !state.quotaWarned) {
@@ -914,6 +1058,7 @@ async function openPost(cid) {
       draftKey: String(post.cid),
       title: source.title ?? post.title,
       text: source.text ?? post.text,
+      url: post.url || '',
       meta: {
         tags: source.tags ?? post.tags,
         summary: source.summary ?? post.fields?.summary ?? '',
@@ -939,10 +1084,29 @@ function backToList() {
     maybeSnapshot(true);
   }
 
+  const kind = state.kind;
+
   destroyEditor();
   clearTimeout(state.autosaveTimer);
   state.dirty = false;
   state.draftKey = '';
+
+  // 页面编辑器返回页面列表，而不是首页文章列表
+  if (kind === 'page') {
+    const pagesBody = document.getElementById('pages-body');
+    const scroll = pagesBody ? pagesBody.scrollTop : 0;
+
+    show('pages');
+    renderPages();
+
+    if (pagesBody) {
+      requestAnimationFrame(() => {
+        pagesBody.scrollTop = scroll;
+      });
+    }
+
+    return;
+  }
 
   // 编辑器是独立视图，此时列表 DOM 还保留着上一次的渲染结果，先记住滚动位置
   const body = document.getElementById('list-body');
@@ -1313,6 +1477,407 @@ async function submitShuoshuo() {
   }
 }
 
+// ─── 独立页面 ────────────────────────────────────────────────────────────
+
+const PAGES_PAGE_SIZE = 30;
+
+const pages = {
+  items: [],
+  total: 0,
+  page: 1,
+  hasMore: true,
+  loading: false,
+  seq: 0,
+  templates: {},
+};
+
+/** 管理页入口与首页都能打开页面列表 */
+function openPages(from = 'list') {
+  if (!isConfigured()) {
+    openSettings();
+    return;
+  }
+
+  state.pagesFrom = from === 'admin' ? 'admin' : 'list';
+  show('pages');
+  loadPages({ reset: true });
+}
+
+/** 页面列表返回：从管理页进来就回管理页 */
+function closePages() {
+  show(state.pagesFrom === 'admin' ? 'admin' : 'list');
+}
+
+async function loadPages({ reset = true } = {}) {
+  if (!isConfigured()) {
+    openSettings();
+    return;
+  }
+
+  if (reset) {
+    pages.page = 1;
+    pages.hasMore = true;
+  } else if (!pages.hasMore || pages.loading) {
+    return;
+  }
+
+  const seq = (pages.seq += 1);
+  pages.loading = true;
+  updatePagesMore();
+
+  if (reset && !pages.items.length) {
+    el.pagesLoading.hidden = false;
+    el.pagesLoading.textContent = '加载中…';
+  }
+
+  try {
+    const data = await call('pages', {
+      query: { page: pages.page, size: PAGES_PAGE_SIZE },
+    });
+
+    if (seq !== pages.seq) {
+      return;
+    }
+
+    const items = data.items || [];
+
+    if (reset) {
+      pages.items = items;
+    } else {
+      const exists = new Set(pages.items.map((item) => item.cid));
+      items.forEach((item) => {
+        if (!exists.has(item.cid)) {
+          pages.items.push(item);
+        }
+      });
+    }
+
+    pages.total = Number(data.total || 0);
+    pages.templates = data.templates || pages.templates;
+    pages.hasMore =
+      typeof data.total === 'number'
+        ? pages.items.length < data.total
+        : items.length >= PAGES_PAGE_SIZE;
+
+    renderPages();
+  } catch (error) {
+    if (seq !== pages.seq) {
+      return;
+    }
+
+    toast(error.message);
+
+    if (reset) {
+      // 刷新失败保留已有列表，只有首次加载失败才显示错误占位
+      if (!pages.items.length) {
+        renderPages();
+        el.pagesLoading.hidden = false;
+        el.pagesLoading.textContent = '加载失败，下拉重试';
+      }
+    } else {
+      pages.page = Math.max(1, pages.page - 1);
+    }
+
+    pages.hasMore = true;
+  } finally {
+    if (seq === pages.seq) {
+      pages.loading = false;
+      updatePagesMore();
+    }
+  }
+}
+
+function pageDraftItems() {
+  return listDrafts().filter((draft) => String(draft.id).startsWith('page-'));
+}
+
+function renderPages() {
+  updatePagesMore();
+  el.pagesItems.innerHTML = '';
+
+  const drafts = pageDraftItems();
+  el.pagesEmpty.hidden = drafts.length + pages.items.length > 0;
+  el.pagesLoading.hidden = true;
+
+  if (!drafts.length && !pages.items.length) {
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  drafts.forEach((draft) => {
+    fragment.appendChild(
+      createItem({
+        key: draft.id,
+        title: draft.title || '未命名页面',
+        badge: '<span class="badge local">本地草稿</span>',
+        time: formatDate((draft.updatedAt || Date.now()) / 1000),
+        item: { local: true, kind: 'page', id: draft.id, title: draft.title, text: draft.text },
+      }),
+    );
+  });
+
+  pages.items.forEach((item) => {
+    const statusBadge = item.hidden
+      ? '<span class="badge draft">隐藏</span>'
+      : '<span class="badge">已发布</span>';
+    const templateName = pages.templates[item.template];
+    const templateBadge = templateName
+      ? `<span class="badge local">${escapeHtml(templateName)}</span>`
+      : '';
+
+    fragment.appendChild(
+      createItem({
+        key: `page-${item.cid}`,
+        title: item.title || '未命名页面',
+        badge: statusBadge + templateBadge,
+        time: formatDate(item.created),
+        item: { local: false, kind: 'page', ...item },
+      }),
+    );
+  });
+
+  el.pagesItems.appendChild(fragment);
+}
+
+function updatePagesMore() {
+  if (!el.pagesMore) {
+    return;
+  }
+
+  el.pagesMore.hidden = !pages.hasMore;
+  el.pagesMore.textContent = pages.loading ? '加载中…' : '加载更多';
+  el.pagesMore.disabled = pages.loading;
+}
+
+async function openPage(cid) {
+  try {
+    const page = await call('page', { query: { cid } });
+    const key = `page-${cid}`;
+    const local = readDraft(key);
+    // 与服务端对比后再决定是否恢复本地，避免把网页端的修改回滚
+    const useLocal = Boolean(
+      local && local.updatedAt > page.modified * 1000 && pageDraftDiffers(local, page),
+    );
+    const source = useLocal ? local : {};
+    const templates = page.templates || {};
+
+    if (Object.keys(templates).length) {
+      pages.templates = templates;
+    }
+
+    state.status = page.status;
+
+    startEditor({
+      cid: page.cid,
+      draftKey: key,
+      kind: 'page',
+      url: page.url || '',
+      title: source.title ?? page.title,
+      text: source.text ?? page.text,
+      meta: {},
+      pageMeta: {
+        slug: source.slug ?? page.slug,
+        template: source.template ?? (page.template || ''),
+        status: source.status ?? page.status,
+        order: source.order ?? Number(page.order || 0),
+        allowComment: source.allowComment ?? Number(page.allowComment) !== 0,
+      },
+    });
+
+    if (useLocal) {
+      toast('已恢复本地草稿');
+    }
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+function openNewPage() {
+  if (!isConfigured()) {
+    openSettings();
+    return;
+  }
+
+  state.status = 'publish';
+
+  startEditor({
+    cid: 0,
+    draftKey: `page-${newDraftId()}`,
+    kind: 'page',
+    title: '',
+    text: '',
+    meta: {},
+    pageMeta: { slug: '', template: '', status: 'publish', order: 0, allowComment: true },
+  });
+}
+
+function openLocalPageDraft(id) {
+  const draft = readDraft(id);
+
+  if (!draft) {
+    toast('草稿已不存在');
+    renderPages();
+    return;
+  }
+
+  state.status = draft.status || 'publish';
+
+  startEditor({
+    cid: 0,
+    draftKey: id,
+    kind: 'page',
+    title: draft.title || '',
+    text: draft.text || '',
+    meta: {},
+    pageMeta: {
+      slug: draft.slug || '',
+      template: draft.template || '',
+      status: draft.status || 'publish',
+      order: Number(draft.order || 0),
+      allowComment: draft.allowComment !== false,
+    },
+  });
+}
+
+/** 本地页面草稿与服务端页面是否有实质差异 */
+function pageDraftDiffers(draft, page) {
+  const pairs = [
+    [draft.title, page.title],
+    [draft.text, page.text],
+    [draft.slug ?? '', page.slug],
+    [draft.template ?? '', page.template ?? ''],
+    [draft.status ?? 'publish', page.status],
+    [Number(draft.order || 0), Number(page.order || 0)],
+  ];
+
+  if (pairs.some(([local, remote]) => String(local ?? '') !== String(remote ?? ''))) {
+    return true;
+  }
+
+  return (draft.allowComment !== false) !== (Number(page.allowComment) !== 0);
+}
+
+function renderPageTemplates(selected = '') {
+  const templates = pages.templates || {};
+  el.pageTemplate.innerHTML = '';
+
+  const empty = document.createElement('option');
+  empty.value = '';
+  empty.textContent = '默认模板';
+  el.pageTemplate.appendChild(empty);
+
+  Object.entries(templates).forEach(([file, name]) => {
+    const option = document.createElement('option');
+    option.value = file;
+    option.textContent = name || file;
+    el.pageTemplate.appendChild(option);
+  });
+
+  el.pageTemplate.value = selected && templates[selected] ? selected : '';
+}
+
+function openPageSheet() {
+  const meta = state.pageMeta || {};
+  renderPageTemplates(meta.template || '');
+  el.pageStatus.value = meta.status === 'hidden' ? 'hidden' : 'publish';
+  el.pageOrder.value = String(Number(meta.order || 0));
+  el.pageSlug.value = meta.slug || '';
+  el.pageAllowComment.checked = meta.allowComment !== false;
+  showSheet(el.pageSheet, el.pageMask);
+}
+
+function closePageSheet() {
+  hideSheet(el.pageSheet, el.pageMask);
+}
+
+function applyPageSheet() {
+  state.pageMeta = {
+    ...(state.pageMeta || {}),
+    template: el.pageTemplate.value,
+    status: el.pageStatus.value === 'hidden' ? 'hidden' : 'publish',
+    order: Math.max(0, Number(el.pageOrder.value || 0) || 0),
+    slug: el.pageSlug.value.trim(),
+    allowComment: el.pageAllowComment.checked,
+  };
+  state.dirty = true;
+  closePageSheet();
+  scheduleAutosave();
+}
+
+async function submitPage() {
+  const title = el.title.value.trim();
+  const text = getEditorValue();
+
+  if (!title) {
+    toast('标题还没填');
+    return;
+  }
+
+  if (!text.trim()) {
+    toast('正文不能为空');
+    return;
+  }
+
+  const meta = state.pageMeta || {};
+  const body = {
+    cid: state.cid,
+    title,
+    text,
+    slug: meta.slug || '',
+    template: meta.template || '',
+    status: meta.status === 'hidden' ? 'hidden' : 'publish',
+    order: Number(meta.order || 0),
+    allowComment: meta.allowComment !== false,
+    fields: {},
+  };
+
+  const button = $('#btn-publish');
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = '保存中…';
+
+  const previousKey = state.draftKey;
+
+  try {
+    const result = await call('pageSave', { method: 'POST', body });
+
+    state.cid = result.cid;
+    state.status = result.status;
+    state.currentUrl = result.url || state.currentUrl;
+    state.dirty = false;
+
+    removeDraft(previousKey);
+    state.draftKey = '';
+
+    destroyEditor();
+    clearTimeout(state.autosaveTimer);
+    show('pages');
+    await loadPages({ reset: true });
+
+    toast(result.status === 'hidden' ? '已保存为隐藏页面' : '已保存');
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+/** 用系统浏览器 / 内置浏览器打开线上页面 */
+async function openInBrowser(url) {
+  if (!url) {
+    toast('还没有可访问的链接');
+    return;
+  }
+
+  try {
+    await Browser.open({ url });
+  } catch (error) {
+    toast('打开浏览器失败');
+  }
+}
+
 // ─── 抽屉通用 ────────────────────────────────────────────────────────────
 
 // 抽屉关闭动画延时器：快速连续开关时取消上一次
@@ -1321,6 +1886,7 @@ let sheetTimer = null;
 /** 所有会盖住页面的弹层，任意一个打开时锁住底层滚动 */
 const OVERLAY_IDS = [
   'sheet',
+  'page-sheet',
   'shuoshuo-sheet',
   'history-sheet',
   'item-sheet',
@@ -1917,10 +2483,34 @@ function bind() {
     openAdmin();
   });
   $('#btn-admin-back').addEventListener('click', () => show('list'));
+  $('#btn-pages-back').addEventListener('click', closePages);
+  $('#btn-pages-refresh').addEventListener('click', () => loadPages({ reset: true }));
+  $('#btn-pages-new').addEventListener('click', openNewPage);
+  el.pagesMore.addEventListener('click', () => {
+    pages.page += 1;
+    loadPages({ reset: false });
+  });
+  $('#page-sheet-close').addEventListener('click', closePageSheet);
+  $('#page-sheet-cancel').addEventListener('click', closePageSheet);
+  el.pageMask.addEventListener('click', closePageSheet);
+  $('#page-sheet-done').addEventListener('click', applyPageSheet);
+  $('#btn-preview').addEventListener('click', () => openInBrowser(state.currentUrl));
   $('#btn-new').addEventListener('click', openNew);
   $('#btn-back').addEventListener('click', backToList);
-  $('#btn-save').addEventListener('click', () => submit(state.status === 'draft'));
-  $('#btn-publish').addEventListener('click', openSheet);
+  $('#btn-save').addEventListener('click', () => {
+    if (state.kind === 'page') {
+      openPageSheet();
+    } else {
+      submit(state.status === 'draft');
+    }
+  });
+  $('#btn-publish').addEventListener('click', () => {
+    if (state.kind === 'page') {
+      submitPage();
+    } else {
+      openSheet();
+    }
+  });
   $('#btn-settings-back').addEventListener('click', () => {
     saveSettingsFromForm();
 
@@ -2079,6 +2669,7 @@ function bind() {
   // 列表下拉刷新（简版：滚到顶部再下拉触发）
   bindPullRefresh($('#list-body'), () => loadPosts());
   bindPullRefresh($('#shuoshuo-body'), () => loadShuoshuo({ reset: true }));
+  bindPullRefresh($('#pages-body'), () => loadPages({ reset: true }));
 
   // 安卓物理返回键
   if (window.Capacitor?.isNativePlatform?.()) {
@@ -2089,6 +2680,8 @@ function bind() {
         // 编辑器内的主题 / 表格面板已关闭
       } else if (!el.shuoshuoSheet.hidden) {
         closeShuoshuoSheet();
+      } else if (!el.pageSheet.hidden) {
+        closePageSheet();
       } else if (!el.itemSheet.hidden) {
         closeItemSheet();
       } else if (!el.historySheet.hidden) {
@@ -2103,6 +2696,8 @@ function bind() {
         backToList();
       } else if (state.view === 'shuoshuo') {
         show('list');
+      } else if (state.view === 'pages') {
+        closePages();
       } else if (state.view === 'settings') {
         isConfigured() ? show('list') : App.exitApp();
       } else {
@@ -2124,7 +2719,7 @@ themeQuery?.addEventListener?.('change', () => {
 });
 
 migrateLegacyDraft();
-initAdmin({ onToast: toast });
+initAdmin({ onToast: toast, onOpenPages: () => openPages('admin') });
 bind();
 
 if (isConfigured()) {

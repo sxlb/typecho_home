@@ -9,6 +9,7 @@ use TypechoPlugin\SxlbPublisher\Api\Admin;
 use TypechoPlugin\SxlbPublisher\Api\Comment;
 use TypechoPlugin\SxlbPublisher\Api\Media;
 use TypechoPlugin\SxlbPublisher\Api\Meta;
+use TypechoPlugin\SxlbPublisher\Api\Page;
 use TypechoPlugin\SxlbPublisher\Api\Post;
 use TypechoPlugin\SxlbPublisher\Api\Shuoshuo;
 use TypechoPlugin\SxlbPublisher\Api\Upload;
@@ -120,6 +121,18 @@ class Action extends Widget implements ActionInterface
                     break;
                 case 'shuoshuoDelete':
                     $this->shuoshuoDelete();
+                    break;
+                case 'pages':
+                    $this->pages();
+                    break;
+                case 'page':
+                    $this->page();
+                    break;
+                case 'pageSave':
+                    $this->pageSave();
+                    break;
+                case 'pageDelete':
+                    $this->pageDelete();
                     break;
                 case 'admin':
                     $this->admin($sub);
@@ -466,6 +479,53 @@ class Action extends Widget implements ActionInterface
         }
 
         $this->ok(Shuoshuo::delete(Db::get(), $coid));
+    }
+
+    // ─── 独立页面 ──────────────────────────────────────────────────────────
+
+    private function pages()
+    {
+        $this->ok(Page::listing(
+            Db::get(),
+            max(1, $this->intParam('page', 1)),
+            min(50, max(1, $this->intParam('size', 30)))
+        ));
+    }
+
+    private function page()
+    {
+        $cid = $this->intParam('cid');
+
+        if ($cid <= 0) {
+            $this->fail('缺少 cid');
+        }
+
+        $data = Page::detail(Db::get(), $cid);
+
+        if ($data === null) {
+            $this->fail('页面不存在', 404);
+        }
+
+        $this->ok($data);
+    }
+
+    private function pageSave()
+    {
+        $this->requirePost('pageSave');
+        $this->ok(Page::save($this->body, $this->config));
+    }
+
+    private function pageDelete()
+    {
+        $this->requirePost('pageDelete');
+
+        $cid = $this->intParam('cid');
+
+        if ($cid <= 0) {
+            $this->fail('缺少 cid');
+        }
+
+        $this->ok(Page::delete($cid));
     }
 
     // ─── 管理接口 ──────────────────────────────────────────────────────────

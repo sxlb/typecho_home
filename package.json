@@ -1,7 +1,7 @@
 {
   "name": "sxlb-writer",
   "private": true,
-  "version": "2.5.0",
+  "version": "2.6.0",
   "type": "module",
   "description": "凉薄博客安卓写作客户端",
   "scripts": {
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@capacitor/app": "^7.0.1",
+    "@capacitor/browser": "^7.0.5",
     "@capacitor/core": "^7.1.0",
     "vditor": "^3.10.8"
   },

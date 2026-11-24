@@ -43,9 +43,11 @@ const state = {
 };
 
 let toast = () => {};
+let onOpenPages = () => {};
 
 export function initAdmin(options = {}) {
   toast = typeof options.onToast === 'function' ? options.onToast : toast;
+  onOpenPages = typeof options.onOpenPages === 'function' ? options.onOpenPages : onOpenPages;
 
   $('#btn-admin-refresh').addEventListener('click', () => load());
   $('#btn-admin-retry').addEventListener('click', () => load());
@@ -277,6 +279,11 @@ function renderContent() {
       title: '分类与标签',
       description: `${overview.categories || 0} 个分类 · ${overview.tags || 0} 个标签`,
     },
+    {
+      key: 'pages',
+      title: '独立页面',
+      description: '关于、友链、时光机等自定义页面',
+    },
   ];
 
   el.content.innerHTML = '';
@@ -302,7 +309,14 @@ function renderContent() {
     button.type = 'button';
     button.className = 'btn ghost small';
     button.textContent = '打开';
-    button.addEventListener('click', () => openTool(entry.key));
+    button.addEventListener('click', () => {
+      if (entry.key === 'pages') {
+        onOpenPages();
+        return;
+      }
+
+      openTool(entry.key);
+    });
 
     row.append(info, button);
     el.content.appendChild(row);

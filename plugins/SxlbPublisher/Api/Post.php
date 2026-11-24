@@ -292,7 +292,7 @@ class Post
      * 已存在文章的原 slug 允许原样保留（网页端可能写过中文 slug），
      * 只有用户主动修改时才按新规则校验，避免老文章在 App 里改不动。
      */
-    private static function normalizeSlug(Db $db, string $slug, string $title, int $cid): string
+    public static function normalizeSlug(Db $db, string $slug, string $title, int $cid): string
     {
         $slug = trim($slug);
         $current = '';
