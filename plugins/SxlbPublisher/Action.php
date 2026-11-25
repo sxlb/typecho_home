@@ -6,6 +6,7 @@ use Typecho\Config;
 use Typecho\Db;
 use Typecho\Widget;
 use TypechoPlugin\SxlbPublisher\Api\Admin;
+use TypechoPlugin\SxlbPublisher\Api\Album;
 use TypechoPlugin\SxlbPublisher\Api\Comment;
 use TypechoPlugin\SxlbPublisher\Api\Links;
 use TypechoPlugin\SxlbPublisher\Api\Media;
@@ -156,6 +157,9 @@ class Action extends Widget implements ActionInterface
                     break;
                 case 'visitors':
                     $this->visitors();
+                    break;
+                case 'album':
+                    $this->album();
                     break;
                 case 'admin':
                     $this->admin($sub);
@@ -645,6 +649,18 @@ class Action extends Widget implements ActionInterface
             Db::get(),
             (string) $this->param('range', 'today'),
             $this->intParam('page', 1)
+        ));
+    }
+
+    /**
+     * 相册：主题里分类 slug 为 image 的文章
+     */
+    private function album()
+    {
+        $this->ok(Album::listing(
+            Db::get(),
+            max(1, $this->intParam('page', 1)),
+            min(30, max(1, $this->intParam('size', 18)))
         ));
     }
 

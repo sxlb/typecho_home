@@ -1,5 +1,5 @@
 import './ui.css';
-import { call, uploadImage, getSettings, saveSettings, isConfigured, DEFAULT_SETTINGS } from './api.js';
+import { call, callAdmin, uploadImage, getSettings, saveSettings, isConfigured, DEFAULT_SETTINGS } from './api.js';
 import {
   initEditor,
   getEditorValue,
@@ -33,6 +33,7 @@ const el = {
     list: $('#view-list'),
     admin: $('#view-admin'),
     shuoshuo: $('#view-shuoshuo'),
+    album: $('#view-album'),
     pages: $('#view-pages'),
     links: $('#view-links'),
     stats: $('#view-stats'),
@@ -83,6 +84,19 @@ const el = {
   shuoshuoText: $('#shuoshuo-text'),
   shuoshuoSecret: $('#shuoshuo-secret'),
   shuoshuoUploads: $('#shuoshuo-uploads'),
+  albumLoading: $('#album-loading'),
+  albumEmpty: $('#album-empty'),
+  albumGrid: $('#album-grid'),
+  albumMore: $('#album-more'),
+  albumSheet: $('#album-sheet'),
+  albumSheetMask: $('#album-sheet-mask'),
+  albumTitle: $('#album-title'),
+  albumDesc: $('#album-desc'),
+  albumPicker: $('#album-picker'),
+  albumViewer: $('#album-viewer'),
+  albumViewerTrack: $('#album-viewer-track'),
+  albumViewerCount: $('#album-viewer-count'),
+  albumViewerCaption: $('#album-viewer-caption'),
   pagesLoading: $('#pages-loading'),
   pagesEmpty: $('#pages-empty'),
   pagesItems: $('#pages-items'),
@@ -165,6 +179,8 @@ const state = {
   pageMeta: null,
   // 页面列表的来源视图，返回时回到管理页或首页
   pagesFrom: 'list',
+  // 从相册进入的文章编辑器，返回时回到相册
+  albumEditing: false,
   status: 'draft',
   dirty: false,
   metasLoaded: false,
@@ -1400,6 +1416,14 @@ function backToList() {
     return;
   }
 
+  // 从相册进入的编辑，保存或返回后回相册并刷新，避免跳到首页
+  if (state.albumEditing) {
+    state.albumEditing = false;
+    show('album');
+    loadAlbum({ reset: true });
+    return;
+  }
+
   // 编辑器是独立视图，此时列表 DOM 还保留着上一次的渲染结果，先记住滚动位置
   const body = document.getElementById('list-body');
   const scroll = body ? body.scrollTop : 0;
@@ -1804,6 +1828,487 @@ async function submitShuoshuo() {
     shuoshuo.submitting = false;
     button.disabled = false;
     button.textContent = editing ? '保存' : '发布';
+  }
+}
+
+// ─── 相册 ────────────────────────────────────────────────────────────────
+
+const ALBUM_PAGE_SIZE = 18;
+
+/** 相册里的最大图片数，与网页端编辑习惯保持一致 */
+const ALBUM_MAX_IMAGES = 9;
+
+const album = {
+  items: [],
+  page: 1,
+  hasMore: true,
+  loading: false,
+  seq: 0,
+  // 服务端返回的相册分类 mid，0 表示博客里没有 slug=image 的分类
+  mid: 0,
+  name: '',
+  // 是否成功拉到过一次数据：区分「没有分类」与「加载失败」
+  loaded: false,
+  // 发相册抽屉里待发布的图片地址
+  images: [],
+  submitting: false,
+  // 浏览层当前展示的文章
+  viewing: null,
+  viewerIndex: 0,
+};
+
+let albumDeleteArmed = false;
+let albumDeleteTimer = 0;
+
+/**
+ * 默认标题：2026-11-25 的照片
+ */
+function defaultAlbumTitle(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, '0');
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} 的照片`;
+}
+
+function openAlbum() {
+  if (!isConfigured()) {
+    openSettings();
+    return;
+  }
+
+  show('album');
+  loadAlbum({ reset: true });
+}
+
+async function loadAlbum({ reset = true } = {}) {
+  if (reset) {
+    album.page = 1;
+    album.hasMore = true;
+  }
+
+  if (!album.hasMore) {
+    return;
+  }
+
+  const seq = (album.seq += 1);
+  album.loading = true;
+  updateAlbumMore();
+
+  if (reset) {
+    el.albumLoading.hidden = false;
+    el.albumLoading.textContent = '加载中…';
+  }
+
+  try {
+    const data = await call('album', { query: { page: album.page, size: ALBUM_PAGE_SIZE } });
+
+    if (seq !== album.seq) {
+      return;
+    }
+
+    album.mid = Number(data?.mid || 0);
+    album.name = String(data?.name || '');
+    album.loaded = true;
+
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const exists = new Set(album.items.map((item) => item.cid));
+
+    album.items = reset
+      ? items
+      : album.items.concat(items.filter((item) => !exists.has(item.cid)));
+    album.hasMore =
+      typeof data?.total === 'number' ? album.items.length < data.total : items.length >= ALBUM_PAGE_SIZE;
+
+    renderAlbum();
+    el.albumLoading.hidden = true;
+  } catch (error) {
+    if (seq !== album.seq) {
+      return;
+    }
+
+    toast(error.message);
+
+    if (reset) {
+      album.items = [];
+      renderAlbum();
+      el.albumLoading.hidden = false;
+      el.albumLoading.textContent = '加载失败，下拉重试';
+    } else {
+      album.page = Math.max(1, album.page - 1);
+      album.hasMore = true;
+    }
+  } finally {
+    if (seq === album.seq) {
+      album.loading = false;
+      updateAlbumMore();
+    }
+  }
+}
+
+function updateAlbumMore() {
+  el.albumMore.hidden = !album.hasMore || album.items.length === 0;
+  el.albumMore.textContent = album.loading ? '加载中…' : '加载更多';
+  el.albumMore.disabled = album.loading;
+}
+
+function renderAlbum() {
+  updateAlbumMore();
+  el.albumGrid.innerHTML = '';
+
+  // 还没成功拉到过数据时不显示空态，交给 loading 文案提示「加载失败」
+  if (!album.loaded) {
+    el.albumEmpty.hidden = true;
+    return;
+  }
+
+  const title = el.albumEmpty.querySelector('.empty-title');
+  const desc = el.albumEmpty.querySelector('.empty-desc');
+
+  if (album.mid === 0) {
+    el.albumEmpty.hidden = false;
+    title.textContent = '没有找到相册分类';
+    desc.textContent = '博客里需要一个缩略名为 image 的分类';
+    return;
+  }
+
+  el.albumEmpty.hidden = album.items.length > 0;
+  title.textContent = '还没有照片';
+  desc.textContent = '点右上角「发照片」发布第一组';
+
+  const fragment = document.createDocumentFragment();
+  album.items.forEach((item) => fragment.appendChild(createAlbumCard(item)));
+  el.albumGrid.appendChild(fragment);
+}
+
+function createAlbumCard(item) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'album-card';
+
+  const cover = document.createElement('span');
+  cover.className = 'album-cover';
+
+  if (item.cover) {
+    const image = document.createElement('img');
+    image.src = item.cover;
+    image.alt = '';
+    image.loading = 'lazy';
+    cover.appendChild(image);
+  } else {
+    cover.classList.add('empty');
+    cover.textContent = '无图';
+  }
+
+  if (Number(item.count) > 1) {
+    const count = document.createElement('span');
+    count.className = 'album-count';
+    count.textContent = String(item.count);
+    cover.appendChild(count);
+  }
+
+  const title = document.createElement('span');
+  title.className = 'album-card-title';
+  title.textContent = item.title || '未命名';
+
+  const date = document.createElement('span');
+  date.className = 'album-card-date';
+  date.textContent = formatDate(item.created);
+
+  card.append(cover, title, date);
+  card.addEventListener('click', () => openAlbumViewer(item));
+
+  return card;
+}
+
+/* ─── 图片浏览 ─────────────────────────────────────────────────────────── */
+
+function openAlbumViewer(item) {
+  const images = Array.isArray(item.images) && item.images.length
+    ? item.images
+    : (item.cover ? [item.cover] : []);
+
+  if (!images.length) {
+    toast('这篇相册还没有图片');
+    return;
+  }
+
+  album.viewing = item;
+  album.viewerIndex = 0;
+  resetAlbumDelete();
+
+  el.albumViewerTrack.innerHTML = '';
+
+  images.forEach((url) => {
+    const slide = document.createElement('div');
+    slide.className = 'album-slide';
+
+    const image = document.createElement('img');
+    image.src = url;
+    image.alt = '';
+
+    slide.appendChild(image);
+    el.albumViewerTrack.appendChild(slide);
+  });
+
+  el.albumViewerCaption.textContent = [item.title, item.count ? `${item.count} 张` : '']
+    .filter(Boolean)
+    .join(' · ');
+  updateAlbumViewerCount();
+  el.albumViewer.hidden = false;
+  syncModalLock();
+  // 等布局完成再归零，避免 display:none 期间设置 scrollLeft 不生效
+  requestAnimationFrame(() => {
+    el.albumViewerTrack.scrollLeft = 0;
+  });
+}
+
+function updateAlbumViewerCount() {
+  const total = el.albumViewerTrack.childElementCount;
+
+  el.albumViewerCount.textContent = total ? `${album.viewerIndex + 1} / ${total}` : '';
+}
+
+function closeAlbumViewer() {
+  el.albumViewer.hidden = true;
+  el.albumViewerTrack.innerHTML = '';
+  album.viewing = null;
+  resetAlbumDelete();
+  syncModalLock();
+}
+
+function resetAlbumDelete() {
+  albumDeleteArmed = false;
+  window.clearTimeout(albumDeleteTimer);
+  $('#album-viewer-delete').classList.remove('warn');
+}
+
+async function editAlbumPost() {
+  const item = album.viewing;
+
+  if (!item) {
+    return;
+  }
+
+  closeAlbumViewer();
+  state.albumEditing = true;
+  await openPost(item.cid);
+
+  // 打开失败时 openPost 内部只 toast，这里清掉标记，避免下次返回误跳相册
+  if (state.view !== 'editor') {
+    state.albumEditing = false;
+  }
+}
+
+async function deleteAlbumPost() {
+  const item = album.viewing;
+
+  if (!item) {
+    return;
+  }
+
+  const button = $('#album-viewer-delete');
+
+  // 两步确认：第一次点亮按钮，4 秒内再点才真正删除
+  if (!albumDeleteArmed) {
+    albumDeleteArmed = true;
+    button.classList.add('warn');
+    toast('再点一次删除这篇相册');
+    albumDeleteTimer = window.setTimeout(resetAlbumDelete, 4000);
+    return;
+  }
+
+  resetAlbumDelete();
+  button.disabled = true;
+
+  try {
+    await call('delete', { method: 'POST', body: { cid: item.cid } });
+    removeDraft(String(item.cid));
+
+    const removed = item.cid;
+    closeAlbumViewer();
+    album.items = album.items.filter((row) => row.cid !== removed);
+    renderAlbum();
+    toast('已删除');
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/* ─── 发照片 ───────────────────────────────────────────────────────────── */
+
+function openAlbumSheet() {
+  if (album.mid === 0) {
+    toast('博客里需要一个缩略名为 image 的分类');
+    return;
+  }
+
+  album.images = [];
+  el.albumTitle.value = defaultAlbumTitle();
+  el.albumDesc.value = '';
+  renderAlbumPicker();
+  showSheet(el.albumSheet, el.albumSheetMask);
+
+  // 打开抽屉后直接拉起系统相册，少一次点击；抽屉被关掉就不再打扰
+  window.setTimeout(() => {
+    if (!el.albumSheet.hidden) {
+      pickAlbumImages();
+    }
+  }, 280);
+}
+
+function closeAlbumSheet() {
+  hideSheet(el.albumSheet, el.albumSheetMask);
+}
+
+function renderAlbumPicker() {
+  el.albumPicker.innerHTML = '';
+  el.albumPicker.hidden = album.images.length === 0;
+
+  album.images.forEach((url, index) => {
+    const cell = document.createElement('div');
+    cell.className = 'album-pick';
+
+    const image = document.createElement('img');
+    image.src = url;
+    image.alt = '';
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'album-pick-remove';
+    remove.setAttribute('aria-label', '移除照片');
+    remove.textContent = '×';
+    remove.addEventListener('click', () => {
+      album.images.splice(index, 1);
+      renderAlbumPicker();
+    });
+
+    cell.append(image, remove);
+    el.albumPicker.appendChild(cell);
+  });
+}
+
+function pickAlbumImages() {
+  const input = document.createElement('input');
+  const button = $('#btn-album-pick');
+
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.multiple = true;
+
+  input.addEventListener('change', async () => {
+    const picked = [...(input.files || [])];
+
+    if (!picked.length) {
+      return;
+    }
+
+    const room = ALBUM_MAX_IMAGES - album.images.length;
+
+    if (room <= 0) {
+      toast(`一篇相册最多 ${ALBUM_MAX_IMAGES} 张`);
+      return;
+    }
+
+    const files = picked.slice(0, room);
+
+    if (picked.length > room) {
+      toast(`只能再放 ${room} 张`);
+    }
+
+    button.disabled = true;
+
+    try {
+      // 两张一批：弱网下同时挤满上行容易整批超时
+      for (let i = 0; i < files.length; i += 2) {
+        const batch = files.slice(i, i + 2);
+        button.textContent = `上传中 ${Math.min(i + 2, files.length)}/${files.length}`;
+
+        const results = await Promise.allSettled(batch.map((file) => uploadImage(file, 0)));
+        let failed = 0;
+
+        results.forEach((result) => {
+          if (result.status === 'fulfilled' && result.value?.url) {
+            album.images.push(result.value.url);
+          } else {
+            failed += 1;
+          }
+        });
+
+        renderAlbumPicker();
+
+        if (failed) {
+          toast(`${failed} 张照片上传失败`);
+        }
+      }
+    } finally {
+      button.disabled = false;
+      button.textContent = '添加照片';
+    }
+  });
+
+  input.click();
+}
+
+async function submitAlbum(isDraft) {
+  if (album.submitting) {
+    return;
+  }
+
+  if (!album.images.length) {
+    toast('先添加至少一张照片');
+    return;
+  }
+
+  const title = el.albumTitle.value.trim() || defaultAlbumTitle();
+  const desc = el.albumDesc.value.trim();
+  const button = isDraft ? $('#btn-album-draft') : $('#btn-album-submit');
+
+  album.submitting = true;
+  button.disabled = true;
+  button.textContent = isDraft ? '保存中…' : '发布中…';
+
+  try {
+    // 正文只放图片：主题会把相册分类文章里的 img 解析成图片墙，文字会被丢弃，
+    // 描述统一写 fields.album，由主题显示在文章标题下方
+    const text = album.images.map((url) => `![](${url})`).join('\n\n');
+
+    await call('save', {
+      method: 'POST',
+      body: {
+        cid: 0,
+        isDraft,
+        title,
+        text,
+        mid: [album.mid],
+        fields: {
+          thumb: album.images[0],
+          album: desc,
+          summary: desc,
+        },
+      },
+    });
+
+    closeAlbumSheet();
+    toast(isDraft ? '已存为草稿' : '已发布到相册');
+
+    if (!isDraft) {
+      // Handsome 的相册分类页有渲染缓存，清一次让网页端立即出现新照片；
+      // 管理接口没开启时会失败，忽略即可
+      try {
+        await callAdmin('clearCache');
+      } catch {
+        // 静默：清缓存只是加速手段
+      }
+
+      await loadAlbum({ reset: true });
+    }
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    album.submitting = false;
+    button.disabled = false;
+    button.textContent = isDraft ? '存草稿' : '发布';
   }
 }
 
@@ -3116,6 +3621,8 @@ const OVERLAY_IDS = [
   'page-sheet',
   'link-sheet',
   'shuoshuo-sheet',
+  'album-sheet',
+  'album-viewer',
   'history-sheet',
   'item-sheet',
   'theme-sheet',
@@ -3771,6 +4278,41 @@ function bind() {
     shuoshuo.page += 1;
     loadShuoshuo({ reset: false });
   });
+  $('#btn-album').addEventListener('click', openAlbum);
+  $('#btn-album-back').addEventListener('click', () => show('shuoshuo'));
+  $('#btn-album-refresh').addEventListener('click', () => loadAlbum({ reset: true }));
+  $('#btn-album-new').addEventListener('click', openAlbumSheet);
+  $('#album-sheet-close').addEventListener('click', closeAlbumSheet);
+  $('#album-cancel').addEventListener('click', closeAlbumSheet);
+  el.albumSheetMask.addEventListener('click', closeAlbumSheet);
+  $('#btn-album-pick').addEventListener('click', pickAlbumImages);
+  $('#btn-album-submit').addEventListener('click', () => submitAlbum(false));
+  $('#btn-album-draft').addEventListener('click', () => submitAlbum(true));
+  el.albumMore.addEventListener('click', () => {
+    album.page += 1;
+    loadAlbum({ reset: false });
+  });
+  el.albumViewerTrack.addEventListener('scroll', () => {
+    const width = el.albumViewerTrack.clientWidth || 1;
+    const index = Math.round(el.albumViewerTrack.scrollLeft / width);
+
+    if (index !== album.viewerIndex) {
+      album.viewerIndex = index;
+      updateAlbumViewerCount();
+    }
+  }, { passive: true });
+  $('#album-viewer-close').addEventListener('click', closeAlbumViewer);
+  $('#album-viewer-edit').addEventListener('click', editAlbumPost);
+  $('#album-viewer-delete').addEventListener('click', deleteAlbumPost);
+  $('#album-viewer-open').addEventListener('click', () => {
+    const url = album.viewing?.url;
+
+    if (url) {
+      openInBrowser(url);
+    } else {
+      toast('没有可打开的地址');
+    }
+  });
   $('#btn-admin').addEventListener('click', () => {
     show('admin');
     openAdmin();
@@ -4040,6 +4582,7 @@ function bind() {
   // 列表下拉刷新（简版：滚到顶部再下拉触发）
   bindPullRefresh($('#list-body'), () => loadPosts());
   bindPullRefresh($('#shuoshuo-body'), () => loadShuoshuo({ reset: true }));
+  bindPullRefresh($('#album-body'), () => loadAlbum({ reset: true }));
   bindPullRefresh($('#pages-body'), () => loadPages({ reset: true }));
   bindPullRefresh($('#links-body'), () => loadLinks());
   bindPullRefresh($('#stats-body'), () => loadStats());
@@ -4053,6 +4596,10 @@ function bind() {
         // 编辑器内的主题 / 表格面板已关闭
       } else if (!el.shuoshuoSheet.hidden) {
         closeShuoshuoSheet();
+      } else if (!el.albumViewer.hidden) {
+        closeAlbumViewer();
+      } else if (!el.albumSheet.hidden) {
+        closeAlbumSheet();
       } else if (!el.pageSheet.hidden) {
         closePageSheet();
       } else if (!el.linkSheet.hidden) {
@@ -4071,6 +4618,8 @@ function bind() {
         backToList();
       } else if (state.view === 'shuoshuo') {
         show('list');
+      } else if (state.view === 'album') {
+        show('shuoshuo');
       } else if (state.view === 'pages') {
         closePages();
       } else if (state.view === 'links') {
