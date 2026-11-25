@@ -64,6 +64,17 @@ jobs:
       - name: 同步资源
         run: npx cap sync android
 
+      # Gradle 依赖与 wrapper 走缓存：冷启动要下载 AGP 与 Capacitor 依赖，
+      # 网络抖动会直接导致构建失败
+      - name: 缓存 Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/app/build.gradle', 'android/variables.gradle') }}
+          restore-keys: gradle-${{ runner.os }}-
+
       - name: 打包 APK
         run: |
           cd android
