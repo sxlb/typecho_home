@@ -1473,13 +1473,14 @@ body {
 .title-input {
   flex: none;
   width: 100%;
-  padding: 16px 20px 8px;
+  padding: 20px 24px 4px;
   border: none;
   background: transparent;
   color: var(--ink);
   font-family: inherit;
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 700;
+  line-height: 1.35;
   letter-spacing: 0.01em;
   outline: none;
 }
@@ -1490,9 +1491,9 @@ body {
 }
 
 .editor-wrap {
+  position: relative;
   flex: 1;
   min-height: 0;
-  padding: 0 6px 0 10px;
 }
 
 #editor {
@@ -1502,15 +1503,27 @@ body {
 /* Vditor 把挂载节点本身变成 .vditor，所以两个选择器都要覆盖 */
 #editor.vditor,
 #editor .vditor {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   border: none;
   background: transparent;
 }
 
+/* 工具栏移到底部，写作时视线留在正文上 */
 #editor .vditor-toolbar {
-  padding: 2px 6px 6px;
-  background: transparent;
-  border-bottom: 1px solid var(--line);
+  order: 2;
+  flex: none;
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+  border-bottom: none;
+  background: var(--surface);
+}
+
+#editor .vditor-content {
+  order: 1;
+  flex: 1;
+  min-height: 0;
 }
 
 #editor .vditor-toolbar__item {
@@ -1518,11 +1531,55 @@ body {
 }
 
 #editor .vditor-reset {
-  padding: 16px 10px 120px;
+  padding: 14px 24px 140px;
   color: var(--ink);
   font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
   font-size: var(--editor-font-size, 15.5px);
-  line-height: 1.78;
+  line-height: 1.8;
+}
+
+/* 字数统计贴正文底部右侧 */
+#editor .vditor-counter {
+  right: 14px;
+  bottom: 10px;
+  z-index: 3;
+}
+
+/* sv 模式的拖拽分隔条跟随内容区顺序 */
+#editor .vditor-resize {
+  order: 1;
+}
+
+/* 收起工具栏后只留一个悬浮按钮 */
+.editor-wrap.toolbar-collapsed #editor .vditor-toolbar {
+  display: none;
+}
+
+.editor-tool-toggle {
+  position: absolute;
+  right: 10px;
+  bottom: 58px;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  box-shadow: var(--shadow);
+  transition: bottom 0.2s ease, transform 0.2s ease;
+}
+
+.editor-tool-toggle:active {
+  background: var(--hover);
+}
+
+.editor-wrap.toolbar-collapsed .editor-tool-toggle {
+  bottom: 16px;
+  transform: rotate(180deg);
 }
 
 #editor .vditor-reset h1,
@@ -1888,6 +1945,70 @@ body.modal-open #view-editor .vditor-sv {
 
 .sheet-actions .btn {
   flex: 1;
+}
+
+/* 发布面板：三步分隔 */
+.sheet-steps {
+  display: flex;
+  gap: 6px;
+  flex: none;
+  padding: 2px 14px 10px;
+}
+
+.sheet-step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 4px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.sheet-step i {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--ink-3);
+  font-style: normal;
+  font-size: 11px;
+}
+
+.sheet-step.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sheet-step.active i {
+  background: var(--accent);
+  color: #fff;
+}
+
+.sheet-pane {
+  animation: sheet-pane-in 0.18s ease;
+}
+
+@keyframes sheet-pane-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ─── 列表工具条 ───────────────────────────────────────── */

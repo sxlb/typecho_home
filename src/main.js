@@ -1229,7 +1229,7 @@ function startEditor({
   state.dirty = false;
   el.title.value = title || '';
   fillSheet(meta || {});
-  el.editorStatus.textContent = cid ? '已加载' : kind === 'page' ? '新页面' : '新文章';
+  el.editorStatus.textContent = cid ? '已保存' : kind === 'page' ? '新页面' : '新文章';
 
   // 页面复用同一套编辑器，但保存语义不同：设置走抽屉，「保存」直接提交
   $('#btn-save').textContent = kind === 'page' ? '设置' : '保存';
@@ -3925,6 +3925,8 @@ function showSheet(sheet, mask) {
   clearTimeout(sheetTimer);
   sheet.hidden = false;
   mask.hidden = false;
+  // 面板里的按钮要能被辅助技术与键盘访问，hidden/aria-hidden 必须成对切换
+  sheet.setAttribute('aria-hidden', 'false');
   syncModalLock();
   requestAnimationFrame(() => {
     sheet.classList.add('open');
@@ -3935,6 +3937,7 @@ function showSheet(sheet, mask) {
 function hideSheet(sheet, mask) {
   sheet.classList.remove('open');
   mask.classList.remove('open');
+  sheet.setAttribute('aria-hidden', 'true');
   clearTimeout(sheetTimer);
   sheetTimer = setTimeout(() => {
     sheet.hidden = true;
@@ -4116,6 +4119,42 @@ function resetPublishConfirm() {
 
 // ─── 发布抽屉 ────────────────────────────────────────────────────────────
 
+/** 发布面板当前步骤：1 基本信息 / 2 封面与摘要 / 3 高级 */
+let sheetStep = 1;
+
+/**
+ * 切换发布面板步骤
+ *
+ * 按钮显隐与步骤条高亮都跟着走，翻页时内容区回到顶部。
+ */
+function setSheetStep(step, { silent = false } = {}) {
+  const next = Math.min(3, Math.max(1, Math.round(Number(step) || 1)));
+  sheetStep = next;
+
+  document.querySelectorAll('.sheet-pane').forEach((pane) => {
+    pane.hidden = Number(pane.dataset.pane) !== next;
+  });
+
+  document.querySelectorAll('.sheet-step').forEach((button) => {
+    const value = Number(button.dataset.step);
+    button.classList.toggle('active', value === next);
+    button.classList.toggle('done', value < next);
+  });
+
+  $('#btn-step-prev').hidden = next === 1;
+  $('#btn-draft').hidden = next !== 3;
+  $('#btn-step-next').hidden = next === 3;
+  $('#btn-submit').hidden = next !== 3;
+
+  if (!silent) {
+    const body = document.querySelector('.sheet-body');
+
+    if (body) {
+      body.scrollTop = 0;
+    }
+  }
+}
+
 function openSheet() {
   ensureMetas();
 
@@ -4129,6 +4168,7 @@ function openSheet() {
   }
 
   resetPublishConfirm();
+  setSheetStep(1, { silent: true });
   renderCheck({ isDraft: true, expand: false });
   showSheet(el.sheet, el.sheetMask);
 }
@@ -4167,6 +4207,8 @@ async function submit(isDraft) {
 
   if (errors.length) {
     resetPublishConfirm();
+    // 检查清单在第 1 步，直接跳回去让用户看到具体问题
+    setSheetStep(1);
     renderCheck({ isDraft, expand: true });
     toast(errors[0].label);
     return;
@@ -4175,6 +4217,7 @@ async function submit(isDraft) {
   // 只有建议项时，先展开清单并让发布按钮进入二次确认，避免每篇都被拦
   if (!isDraft && warnings.length && !state.allowWarnings) {
     state.allowWarnings = true;
+    setSheetStep(1);
     $('#btn-submit').textContent = '仍要发布';
     renderCheck({ isDraft, expand: true });
     toast(`还有 ${warnings.length} 项建议，确认无误请再点一次`);
@@ -4841,6 +4884,15 @@ function bind() {
 
   $('#sheet-close').addEventListener('click', closeSheet);
   el.sheetMask.addEventListener('click', closeSheet);
+  $('#btn-step-next').addEventListener('click', () => setSheetStep(sheetStep + 1));
+  $('#btn-step-prev').addEventListener('click', () => setSheetStep(sheetStep - 1));
+  $('#sheet-steps').addEventListener('click', (event) => {
+    const button = event.target.closest('.sheet-step');
+
+    if (button) {
+      setSheetStep(Number(button.dataset.step));
+    }
+  });
   $('#btn-draft').addEventListener('click', () => submit(true));
   $('#btn-submit').addEventListener('click', () => submit(false));
 

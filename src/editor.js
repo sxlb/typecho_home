@@ -509,6 +509,7 @@ function openSheet(sheetId, maskId) {
   clearTimeout(sheetTimer);
   sheet.hidden = false;
   mask.hidden = false;
+  sheet.setAttribute('aria-hidden', 'false');
   notifyOverlay();
 
   requestAnimationFrame(() => {
@@ -527,6 +528,7 @@ function closeSheet(sheetId, maskId) {
 
   sheet.classList.remove('open');
   mask.classList.remove('open');
+  sheet.setAttribute('aria-hidden', 'true');
 
   clearTimeout(sheetTimer);
   sheetTimer = setTimeout(() => {
@@ -1648,7 +1650,42 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onMo
     },
   });
 
+  bindToolbarToggle();
+
   return vditor;
+}
+
+const TOOLBAR_KEY = 'sxlb.editorToolbarCollapsed';
+
+/**
+ * 底部工具栏的收起 / 展开
+ *
+ * 状态存本机，下次打开编辑器沿用；写作时收起可以把屏幕留给正文。
+ */
+function bindToolbarToggle() {
+  const wrap = document.getElementById('editor-wrap');
+  const toggle = document.getElementById('editor-tool-toggle');
+
+  if (!wrap || !toggle) {
+    return;
+  }
+
+  const collapsed = localStorage.getItem(TOOLBAR_KEY) === '1';
+  wrap.classList.toggle('toolbar-collapsed', collapsed);
+  toggle.setAttribute('aria-label', collapsed ? '展开工具栏' : '收起工具栏');
+
+  toggle.onclick = () => {
+    const next = !wrap.classList.contains('toolbar-collapsed');
+
+    wrap.classList.toggle('toolbar-collapsed', next);
+    toggle.setAttribute('aria-label', next ? '展开工具栏' : '收起工具栏');
+
+    try {
+      localStorage.setItem(TOOLBAR_KEY, next ? '1' : '0');
+    } catch {
+      // 隐私模式下写不进去，只影响下次打开的默认状态
+    }
+  };
 }
 
 function openCamera() {
