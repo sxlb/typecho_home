@@ -734,6 +734,12 @@ body {
 
 /* ─── 相册 ─────────────────────────────────────────────── */
 
+.album-summary {
+  margin: 0 2px 10px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
 .album-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

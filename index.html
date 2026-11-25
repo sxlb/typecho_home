@@ -203,6 +203,7 @@
         </header>
         <main class="list-body album-body" id="album-body">
           <div class="list-loading" id="album-loading">加载中…</div>
+          <p class="album-summary" id="album-summary" hidden></p>
           <div class="empty" id="album-empty" hidden>
             <p class="empty-title">还没有照片</p>
             <p class="empty-desc">点右上角「发照片」发布第一组</p>
@@ -725,6 +726,10 @@
         <label class="field">
           <span class="field-label">摘要</span>
           <textarea id="publish-summary" rows="3" placeholder="留空则由 AI 自动生成"></textarea>
+        </label>
+        <label class="field" id="publish-album-field" hidden>
+          <span class="field-label">相册描述</span>
+          <textarea id="publish-album" rows="2" maxlength="200" placeholder="显示在相册文章标题下方"></textarea>
         </label>
         <div class="field">
           <span class="field-label">缩略图</span>

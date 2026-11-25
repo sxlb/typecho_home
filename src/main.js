@@ -63,6 +63,8 @@ const el = {
   tagChips: $('#tag-chips'),
   tags: $('#publish-tags'),
   summary: $('#publish-summary'),
+  albumField: $('#publish-album-field'),
+  albumText: $('#publish-album'),
   thumb: $('#publish-thumb'),
   reprint: $('#publish-reprint'),
   created: $('#publish-created'),
@@ -85,6 +87,7 @@ const el = {
   shuoshuoSecret: $('#shuoshuo-secret'),
   shuoshuoUploads: $('#shuoshuo-uploads'),
   albumLoading: $('#album-loading'),
+  albumSummary: $('#album-summary'),
   albumEmpty: $('#album-empty'),
   albumGrid: $('#album-grid'),
   albumMore: $('#album-more'),
@@ -181,6 +184,8 @@ const state = {
   pagesFrom: 'list',
   // 从相册进入的文章编辑器，返回时回到相册
   albumEditing: false,
+  // 当前编辑的文章是否属于相册分类（决定「相册描述」字段是否显示）
+  imagePost: false,
   status: 'draft',
   dirty: false,
   metasLoaded: false,
@@ -1026,23 +1031,61 @@ function fillSheet(data) {
   renderTagChips();
 
   el.summary.value = data.summary || '';
+  el.albumText.value = data.album || '';
   el.thumb.value = data.thumb || '';
   el.reprint.value = data.reprint || 'standard';
   el.slug.value = data.slug || '';
   el.created.value = '';
 
+  // 服务器返回了 imagePost，本地草稿沿用保存时的标记
+  state.imagePost = Boolean(data.imagePost);
+
   const mids = Array.isArray(data.mid) ? data.mid.map(Number) : [];
   state.selectedMids = new Set(mids);
   renderCategoryChips();
+  syncAlbumField();
+}
+
+/**
+ * 相册分类（slug=image）的 mid，未加载到分类时返回 0
+ */
+function albumCategoryMid() {
+  const meta = state.categories.find((item) => item.slug === 'image');
+
+  return meta ? Number(meta.mid) : 0;
+}
+
+/**
+ * 「相册描述」只在文章属于相册分类时出现
+ *
+ * 已有文章以服务端 imagePost 为准，新建 / 本地草稿看选中的分类；
+ * 隐藏时清空输入，避免把其他文章的旧描述带过去。
+ */
+function syncAlbumField() {
+  const mid = albumCategoryMid();
+  const isAlbum = state.imagePost || (mid > 0 && state.selectedMids.has(mid));
+
+  el.albumField.hidden = !isAlbum;
+
+  if (!isAlbum) {
+    el.albumText.value = '';
+  }
 }
 
 function currentFields() {
-  return {
+  const fields = {
     summary: el.summary.value.trim(),
     customSummary: el.summary.value.trim(),
     thumb: el.thumb.value.trim(),
     reprint: el.reprint.value,
   };
+
+  // 只在字段可见时提交：普通文章不传 album，服务端会保留原值
+  if (!el.albumField.hidden) {
+    fields.album = el.albumText.value.trim();
+  }
+
+  return fields;
 }
 
 /**
@@ -1066,6 +1109,8 @@ async function ensureMetas({ silent = false } = {}) {
     renderCategoryChips();
     renderTagChips();
     renderListCategories();
+    // 分类加载完成后再判断一次相册字段，新建文章时才知道相册分类的 mid
+    syncAlbumField();
   } catch (error) {
     if (!silent) {
       toast(`分类加载失败：${error.message}`);
@@ -1153,6 +1198,7 @@ function renderCategoryChips() {
         state.selectedMids.add(category.mid);
       }
       chip.classList.toggle('active');
+      syncAlbumField();
       refreshCheck();
     });
     el.categoryChips.appendChild(chip);
@@ -1236,6 +1282,8 @@ function persistLocal() {
     mid: [...state.selectedMids],
     tags: collectTags().join(','),
     summary: el.summary.value,
+    album: el.albumText.value,
+    imagePost: state.imagePost,
     thumb: el.thumb.value,
     reprint: el.reprint.value,
     slug: el.slug.value,
@@ -1331,6 +1379,7 @@ function draftDiffers(draft, post) {
     [draft.title, post.title],
     [draft.text, post.text],
     [draft.summary, post.fields?.summary ?? ''],
+    [draft.album ?? '', post.fields?.album ?? ''],
     [draft.thumb, post.fields?.thumb ?? ''],
     [draft.reprint ?? 'standard', post.fields?.reprint ?? 'standard'],
     [draft.slug, post.slug],
@@ -1370,10 +1419,12 @@ async function openPost(cid) {
       meta: {
         tags: source.tags ?? post.tags,
         summary: source.summary ?? post.fields?.summary ?? '',
+        album: source.album ?? post.fields?.album ?? '',
         thumb: source.thumb ?? post.fields?.thumb ?? '',
         reprint: source.reprint ?? post.fields?.reprint ?? 'standard',
         slug: source.slug ?? post.slug,
         mid: [...state.selectedMids],
+        imagePost: Boolean(post.imagePost),
       },
     });
 
@@ -1847,6 +1898,8 @@ const album = {
   // 服务端返回的相册分类 mid，0 表示博客里没有 slug=image 的分类
   mid: 0,
   name: '',
+  // 相册文章总数（不是图片数）
+  total: 0,
   // 是否成功拉到过一次数据：区分「没有分类」与「加载失败」
   loaded: false,
   // 发相册抽屉里待发布的图片地址
@@ -1907,6 +1960,7 @@ async function loadAlbum({ reset = true } = {}) {
 
     album.mid = Number(data?.mid || 0);
     album.name = String(data?.name || '');
+    album.total = Number(data?.total || 0);
     album.loaded = true;
 
     const items = Array.isArray(data?.items) ? data.items : [];
@@ -1957,6 +2011,7 @@ function renderAlbum() {
   // 还没成功拉到过数据时不显示空态，交给 loading 文案提示「加载失败」
   if (!album.loaded) {
     el.albumEmpty.hidden = true;
+    el.albumSummary.hidden = true;
     return;
   }
 
@@ -1965,12 +2020,15 @@ function renderAlbum() {
 
   if (album.mid === 0) {
     el.albumEmpty.hidden = false;
+    el.albumSummary.hidden = true;
     title.textContent = '没有找到相册分类';
     desc.textContent = '博客里需要一个缩略名为 image 的分类';
     return;
   }
 
   el.albumEmpty.hidden = album.items.length > 0;
+  el.albumSummary.hidden = album.items.length === 0;
+  el.albumSummary.textContent = `共 ${album.total} 组照片`;
   title.textContent = '还没有照片';
   desc.textContent = '点右上角「发照片」发布第一组';
 
@@ -1992,6 +2050,15 @@ function createAlbumCard(item) {
     image.src = item.cover;
     image.alt = '';
     image.loading = 'lazy';
+    // 图片挂了也给出占位，避免网格里出现空洞
+    image.addEventListener('error', () => {
+      image.remove();
+      cover.classList.add('empty');
+
+      const fallback = document.createElement('span');
+      fallback.textContent = '无图';
+      cover.prepend(fallback);
+    });
     cover.appendChild(image);
   } else {
     cover.classList.add('empty');
@@ -2302,6 +2369,8 @@ async function submitAlbum(isDraft) {
       }
 
       await loadAlbum({ reset: true });
+      // 新照片在最前面，回到顶部才能看到
+      $('#album-body').scrollTop = 0;
     }
   } catch (error) {
     toast(error.message);
@@ -3946,8 +4015,17 @@ async function submit(isDraft) {
     closeSheet();
     destroyEditor();
     state.draftKey = '';
-    show('list');
-    await loadPosts();
+
+    // 从相册进入的编辑，保存后回相册并刷新，而不是跳回首页列表
+    if (state.albumEditing) {
+      state.albumEditing = false;
+      show('album');
+      await loadAlbum({ reset: true });
+      $('#album-body').scrollTop = 0;
+    } else {
+      show('list');
+      await loadPosts();
+    }
 
     if (isDraft) {
       toast('已保存为草稿');

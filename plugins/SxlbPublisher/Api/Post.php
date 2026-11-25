@@ -141,6 +141,17 @@ class Post
             $text = substr($text, 15);
         }
 
+        $categories = self::categoryIds($db, $cid);
+        $fields = self::fields($db, $cid);
+
+        // 相册分类（slug=image）决定客户端是否显示「相册描述」字段
+        $albumCategory = $db->fetchRow(
+            $db->select('mid')->from('table.metas')
+                ->where('slug = ?', 'image')
+                ->where('type = ?', 'category')
+                ->limit(1)
+        );
+
         return [
             'cid' => (int) $row['cid'],
             'title' => htmlspecialchars_decode((string) $row['title'], ENT_QUOTES),
@@ -150,9 +161,12 @@ class Post
             'created' => (int) $row['created'],
             'modified' => (int) $row['modified'],
             'status' => $row['type'] === 'post_draft' ? 'draft' : 'publish',
-            'categories' => self::categoryIds($db, $cid),
+            'categories' => $categories,
             'tags' => implode(',', self::tagNames($db, $cid)),
-            'fields' => self::fields($db, $cid),
+            'fields' => $fields,
+            'imagePost' => $albumCategory
+                ? in_array((int) $albumCategory['mid'], $categories, true)
+                : false,
         ];
     }
 
