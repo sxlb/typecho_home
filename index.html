@@ -63,6 +63,12 @@
         </div>
         <main class="list-body" id="list-body">
           <div class="list-loading" id="list-loading">加载中…</div>
+          <!-- 首次加载骨架屏：避免空白与内容跳动 -->
+          <div class="list-skeleton" id="list-skeleton" hidden aria-hidden="true">
+            <div class="skeleton-item"><span class="skeleton-line"></span><span class="skeleton-line short"></span></div>
+            <div class="skeleton-item"><span class="skeleton-line"></span><span class="skeleton-line short"></span></div>
+            <div class="skeleton-item"><span class="skeleton-line"></span><span class="skeleton-line short"></span></div>
+          </div>
           <div class="empty" id="list-empty" hidden>
             <div class="empty-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -71,8 +77,9 @@
                 <path d="M9 12h6M9 15.5h4" />
               </svg>
             </div>
-            <p class="empty-title">还没有文章</p>
-            <p class="empty-desc">点右下角开始写第一篇</p>
+            <p class="empty-title" id="list-empty-title">还没有文章</p>
+            <p class="empty-desc" id="list-empty-desc">点右下角开始写第一篇</p>
+            <button class="btn ghost small" id="list-clear-filters" type="button" hidden>清除筛选</button>
           </div>
           <div id="list-items"></div>
           <button class="list-more" id="list-more" type="button" hidden>加载更多</button>

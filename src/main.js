@@ -49,7 +49,11 @@ const el = {
   meAdmin: $('#me-admin'),
   meAdminHint: $('#me-admin-hint'),
   listLoading: $('#list-loading'),
+  listSkeleton: $('#list-skeleton'),
   listEmpty: $('#list-empty'),
+  emptyTitle: $('#list-empty-title'),
+  emptyDesc: $('#list-empty-desc'),
+  clearFilters: $('#list-clear-filters'),
   listItems: $('#list-items'),
   listMore: $('#list-more'),
   listTitle: $('#list-title'),
@@ -579,8 +583,14 @@ async function loadPosts({ reset = true } = {}) {
   updateListMore();
 
   if (reset) {
-    el.listLoading.hidden = false;
-    el.listLoading.textContent = '加载中…';
+    // 首次加载（列表还是空的）用骨架屏，已有内容时保留列表只显示顶部提示
+    const showSkeleton = !state.posts.length;
+    el.listSkeleton.hidden = !showSkeleton;
+    el.listLoading.hidden = showSkeleton;
+
+    if (!showSkeleton) {
+      el.listLoading.textContent = '加载中…';
+    }
   }
 
   try {
@@ -624,6 +634,7 @@ async function loadPosts({ reset = true } = {}) {
       typeof data.total === 'number' ? merged.length < data.total : items.length >= PAGE_SIZE;
 
     renderList();
+    el.listSkeleton.hidden = true;
     el.listLoading.hidden = true;
   } catch (error) {
     if (seq !== listSeq) {
@@ -635,6 +646,7 @@ async function loadPosts({ reset = true } = {}) {
     if (reset) {
       state.posts = [];
       renderList();
+      el.listSkeleton.hidden = true;
       el.listLoading.hidden = false;
       el.listLoading.textContent = '加载失败，下拉重试';
     } else {
@@ -717,6 +729,7 @@ function renderList() {
 
   if (!drafts.length && !serverItems.length) {
     el.listEmpty.hidden = false;
+    syncEmptyState();
 
     if (state.selecting) {
       updateBatchBar();
@@ -785,10 +798,28 @@ function renderList() {
   });
 
   el.listItems.appendChild(fragment);
+  el.listSkeleton.hidden = true;
   el.listLoading.hidden = true;
 
   if (state.selecting) {
     updateBatchBar();
+  }
+}
+
+/** 空态文案：有筛选条件时说明原因，并给出清除入口 */
+function syncEmptyState() {
+  const filtered = state.filter !== 'all' || Boolean(state.query.trim()) || state.category > 0;
+
+  if (el.emptyTitle) {
+    el.emptyTitle.textContent = filtered ? '没有匹配的文章' : '还没有文章';
+  }
+
+  if (el.emptyDesc) {
+    el.emptyDesc.textContent = filtered ? '换个筛选条件或清空搜索试试' : '点右下角开始写第一篇';
+  }
+
+  if (el.clearFilters) {
+    el.clearFilters.hidden = !filtered;
   }
 }
 
@@ -2311,9 +2342,10 @@ function createAlbumCard(item) {
 
   if (item.cover) {
     const image = document.createElement('img');
-    image.src = item.cover;
     image.alt = '';
     image.loading = 'lazy';
+    // 淡入，避免网格里的封面逐张弹出
+    image.addEventListener('load', () => image.classList.add('loaded'));
     // 图片挂了也给出占位，避免网格里出现空洞
     image.addEventListener('error', () => {
       image.remove();
@@ -2323,6 +2355,13 @@ function createAlbumCard(item) {
       fallback.textContent = '无图';
       cover.prepend(fallback);
     });
+    image.src = item.cover;
+
+    // 命中缓存时 load 可能早于监听，直接补一次
+    if (image.complete) {
+      image.classList.add('loaded');
+    }
+
     cover.appendChild(image);
   } else {
     cover.classList.add('empty');
@@ -5184,6 +5223,28 @@ function bind() {
     renderList();
 
     // 分页数据是按上一个筛选条件拉取的，切换后必须重新请求，避免「全部」只剩残缺列表
+    if (isConfigured()) {
+      loadPosts({ reset: true });
+    }
+  });
+
+  // 空态里的「清除筛选」：一次性恢复全部筛选条件
+  el.clearFilters?.addEventListener('click', () => {
+    state.filter = 'all';
+    state.query = '';
+    state.category = 0;
+    el.listSearch.value = '';
+
+    if (el.listCategory) {
+      el.listCategory.value = '';
+    }
+
+    [...el.listFilters.children].forEach((chip) => {
+      chip.classList.toggle('active', chip.dataset.filter === 'all');
+    });
+    resetBatchSelection();
+    renderList();
+
     if (isConfigured()) {
       loadPosts({ reset: true });
     }

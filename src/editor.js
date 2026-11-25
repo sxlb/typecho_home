@@ -19,7 +19,7 @@ let dialogResolve = null;
  * @param {{title: string, confirmText?: string, fields: Array<{key: string, label: string, type?: 'text'|'select'|'textarea', value?: string, placeholder?: string, options?: Array<{value: string, label: string}>}>}} config
  * @returns {Promise<Record<string, string> | null>}
  */
-function openDialog({ title, confirmText = '插入', fields }) {
+function openDialog({ title, confirmText = '插入', fields, raw = false }) {
   return new Promise((resolve) => {
     if (dialogResolve) {
       const previous = dialogResolve;
@@ -107,7 +107,8 @@ function openDialog({ title, confirmText = '插入', fields }) {
     okBtn.onclick = () => {
       const values = {};
       Object.entries(inputs).forEach(([key, el]) => {
-        values[key] = el.value.trim();
+        // raw 用于查找替换等需要保留首尾空格的场景
+        values[key] = raw ? el.value : el.value.trim();
       });
       close(values);
     };
@@ -130,6 +131,8 @@ function insert(text, range = null) {
     return;
   }
 
+  const before = vditor.getValue();
+
   try {
     // 面板/工具栏点击会让编辑器失焦，先恢复焦点与选区
     vditor.focus();
@@ -140,13 +143,15 @@ function insert(text, range = null) {
     vditor.insertValue(text);
     rememberRange();
   } catch {
-    // 选区彻底丢失时 Vditor 会抛 IndexSizeError：内容已插入就跳过，否则追加到末尾
-    const current = vditor.getValue();
-
-    if (!current.includes(text.trim())) {
-      vditor.setValue(`${current.trimEnd()}\n${text}`, true);
+    // 选区彻底丢失时 Vditor 会抛 IndexSizeError：
+    // 内容已插入就跳过；否则追加到末尾，但必须保留撤销栈
+    if (vditor.getValue() !== before) {
       notifyChange();
+      return;
     }
+
+    vditor.setValue(`${before.trimEnd()}\n${text}`, false);
+    notifyChange();
   }
 }
 
@@ -396,13 +401,19 @@ async function openFindReplace() {
   const value = await openDialog({
     title: '查找替换',
     confirmText: '全部替换',
+    raw: true,
     fields: [
       { key: 'find', label: '查找内容', placeholder: '要查找的文字' },
       { key: 'replace', label: '替换为', placeholder: '留空表示删除' },
     ],
   });
 
-  if (!value || !value.find) {
+  if (!value || value.find === '') {
+    return;
+  }
+
+  if (value.find === value.replace) {
+    errorHandler?.('查找与替换内容相同，无需替换');
     return;
   }
 
@@ -735,6 +746,11 @@ document.addEventListener(
 
     pendingCode = false;
 
+    // 点的是当前模式时 Vditor 不会重建 DOM，保留表格与选区状态
+    if ((vditor?.getCurrentMode?.() || '') === (mode === 'code' ? 'sv' : mode)) {
+      return;
+    }
+
     if (mode !== 'code') {
       lastTextMode = mode;
     }
@@ -803,10 +819,24 @@ function openThemeSheet() {
 /* ─── 表格删除（插入沿用 Vditor 原生表格按钮） ─────────── */
 
 function getEditorRoot() {
-  return (
-    document.querySelector('#editor .vditor-ir') ||
-    document.querySelector('#editor .vditor-wysiwyg')
-  );
+  if (!vditor) {
+    return null;
+  }
+
+  // Vditor 会同时保留 ir / wysiwyg / sv 三套 DOM，只能按当前模式取可见的一层，
+  // 否则永远拿到隐藏的 IR 容器，选区与上传锚点都会失效
+  const mode = vditor.getCurrentMode();
+
+  if (mode === 'wysiwyg') {
+    return document.querySelector('#editor .vditor-wysiwyg .vditor-reset');
+  }
+
+  if (mode === 'ir') {
+    return document.querySelector('#editor .vditor-ir');
+  }
+
+  // 分屏预览 / 纯代码是 textarea，Range 机制不适用
+  return null;
 }
 
 let activeTable = null;
@@ -919,8 +949,10 @@ function deleteCurrentTable() {
     return;
   }
 
+  // 只统计当前模式下的表格：隐藏模式的旧 DOM 会把序号整体带偏
+  const mode = vditor?.getCurrentMode() === 'wysiwyg' ? 'wysiwyg' : 'ir';
   const tables = Array.from(
-    document.querySelectorAll('#editor .vditor-ir table, #editor .vditor-wysiwyg table'),
+    document.querySelectorAll(`#editor .vditor-${mode} table`),
   );
   const index = tables.indexOf(table);
   const lines = getEditorValue().split('\n');
@@ -1068,9 +1100,10 @@ function restoreCellRange() {
  * @returns {boolean} Vditor 是否处理了该事件
  */
 function dispatchTableHotkey({ key, shift, code }) {
-  const target = document.querySelector(
-    '#editor .vditor-ir .vditor-reset, #editor .vditor-wysiwyg .vditor-reset',
-  );
+  // 必须派发给当前可见的模式：隐藏层的事件处理会消费掉快捷键且丢失光标
+  const target = vditor?.getCurrentMode() === 'wysiwyg'
+    ? document.querySelector('#editor .vditor-wysiwyg .vditor-reset')
+    : document.querySelector('#editor .vditor-ir');
 
   if (!target) {
     return false;
@@ -1497,13 +1530,12 @@ function renderMedia() {
 }
 
 async function loadMedia(reset = true) {
-  if (mediaState.loading) {
-    return;
-  }
-
+  // 重置请求允许打断进行中的加载：否则关掉再打开面板会一直看到旧列表
   if (reset) {
     mediaState.page = 1;
     mediaState.hasMore = true;
+  } else if (mediaState.loading) {
+    return;
   }
 
   if (!mediaState.hasMore) {
@@ -1550,6 +1582,8 @@ async function loadMedia(reset = true) {
 
       if (reset) {
         mediaState.items = [];
+        // 首页失败时不再显示「加载更多」，避免下次直接跳过第 1 页
+        mediaState.hasMore = false;
         renderMedia();
       } else {
         mediaState.page = Math.max(1, mediaState.page - 1);
