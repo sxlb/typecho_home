@@ -1532,6 +1532,7 @@ function persistLocal() {
   // 页面没有分类 / 标签，额外保存模板、状态、排序等页面设置
   if (state.kind === 'page' && state.pageMeta) {
     data.slug = state.pageMeta.slug || '';
+    data.originalSlug = state.pageMeta.originalSlug || '';
     data.template = state.pageMeta.template || '';
     data.status = state.pageMeta.status || 'publish';
     data.order = Number(state.pageMeta.order || 0);
@@ -3070,6 +3071,8 @@ async function openPage(cid) {
       meta: {},
       pageMeta: {
         slug: source.slug ?? page.slug,
+        // 服务端只校验「用户主动修改」的缩略名，这里记住原值以便同样放行旧中文 slug
+        originalSlug: page.slug || '',
         template: source.template ?? (page.template || ''),
         status: source.status ?? page.status,
         order: source.order ?? Number(page.order || 0),
@@ -3104,7 +3107,7 @@ function openNewPage() {
     title: '',
     text: '',
     meta: {},
-    pageMeta: { slug: '', template: '', status: 'publish', order: 0, allowComment: true },
+    pageMeta: { slug: '', originalSlug: '', template: '', status: 'publish', order: 0, allowComment: true },
   });
 }
 
@@ -3129,6 +3132,8 @@ function openLocalPageDraft(id) {
     meta: {},
     pageMeta: {
       slug: draft.slug || '',
+      // 旧草稿没有记录原始缩略名：以草稿值为准，避免误拦
+      originalSlug: draft.originalSlug ?? draft.slug ?? '',
       template: draft.template || '',
       status: draft.status || 'publish',
       order: Number(draft.order || 0),
@@ -3226,8 +3231,8 @@ async function submitPage() {
   const meta = state.pageMeta || {};
   const slug = String(meta.slug || '').trim();
 
-  // 与服务端一致的缩略名规则：只允许字母、数字、下划线与连字符
-  if (slug && /[^\w-]/.test(slug)) {
+  // 与服务端一致：只有用户主动改动缩略名时才校验，旧的中文 slug 允许原样保存
+  if (slug && slug !== String(meta.originalSlug || '') && /[^\w-]/.test(slug)) {
     toast('页面缩略名只能使用字母、数字、下划线和连字符');
     return;
   }

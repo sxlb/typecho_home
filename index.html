@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <meta name="theme-color" content="#f6f5f2" />
     <title>写作</title>
@@ -46,6 +46,7 @@
               id="list-search"
               type="search"
               placeholder="搜索标题"
+              aria-label="搜索文章标题"
               autocomplete="off"
             />
             <select class="category-select" id="list-category" aria-label="按分类筛选">
@@ -443,7 +444,7 @@
             <button class="text-btn accent" id="btn-publish">发布</button>
           </div>
         </header>
-        <input id="post-title" class="title-input" type="text" placeholder="标题" autocomplete="off" />
+        <input id="post-title" class="title-input" type="text" placeholder="标题" aria-label="文章标题" autocomplete="off" />
         <div class="editor-wrap" id="editor-wrap">
           <div id="editor"></div>
           <button class="editor-tool-toggle" id="editor-tool-toggle" type="button" aria-label="收起工具栏">
@@ -707,6 +708,7 @@
           id="shuoshuo-text"
           rows="6"
           maxlength="65525"
+          aria-label="说说内容"
           placeholder="此刻在想什么…支持 Markdown"
         ></textarea>
         <div class="shuoshuo-tools">
@@ -824,7 +826,7 @@
           <div class="field">
             <span class="field-label">标签</span>
             <div class="chips tag-chips" id="tag-chips"></div>
-            <input id="publish-tags" type="text" placeholder="输入新标签，回车或逗号分隔添加" autocomplete="off" />
+            <input id="publish-tags" type="text" placeholder="输入新标签，回车或逗号分隔添加" aria-label="文章标签" autocomplete="off" />
           </div>
         </div>
         <div class="sheet-pane" data-pane="2" hidden>
@@ -839,7 +841,7 @@
           <div class="field">
             <span class="field-label">缩略图</span>
             <div class="thumb-row">
-              <input id="publish-thumb" type="url" placeholder="图片地址" autocomplete="off" />
+              <input id="publish-thumb" type="url" placeholder="图片地址" aria-label="缩略图地址" autocomplete="off" />
               <button class="btn ghost small" id="btn-thumb-upload">上传</button>
             </div>
           </div>
@@ -860,7 +862,7 @@
           </div>
           <label class="field">
             <span class="field-label">固定链接</span>
-            <input id="publish-slug" type="text" placeholder="留空自动生成" autocomplete="off" />
+            <input id="publish-slug" type="text" placeholder="留空自动生成" aria-label="固定链接" autocomplete="off" />
           </label>
         </div>
       </div>
@@ -984,13 +986,13 @@
     </aside>
 
     <!-- 主题元素输入弹窗 -->
-    <div class="dialog" id="dialog" hidden>
+    <div class="dialog" id="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title" hidden>
       <div class="dialog-card">
         <h3 class="dialog-title" id="dialog-title">插入</h3>
         <div class="dialog-body" id="dialog-body"></div>
         <div class="dialog-actions">
-          <button class="btn ghost" id="dialog-cancel">取消</button>
-          <button class="btn primary" id="dialog-ok">插入</button>
+          <button class="btn ghost" id="dialog-cancel" type="button">取消</button>
+          <button class="btn primary" id="dialog-ok" type="button">插入</button>
         </div>
       </div>
     </div>
@@ -1028,7 +1030,7 @@
       </button>
     </nav>
 
-    <div class="toast" id="toast" hidden></div>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

@@ -30,7 +30,7 @@ class Shuoshuo
      *
      * @return array{items: array, total: int, page: int, size: int, cid: int}
      */
-    public static function listing(Db $db, int $page, int $size): array
+    public static function listing(Db $db, int $page, int $size, int $ownerId): array
     {
         $cid = self::pageId($db);
 
@@ -40,13 +40,15 @@ class Shuoshuo
 
         $page = max(1, $page);
         $size = min(50, max(1, $size));
+        $ownerId = max(1, $ownerId);
 
         $countQuery = $db->select(['COUNT(coid)' => 'num'])
             ->from('table.comments')
             ->where('cid = ?', $cid)
             ->where('type = ?', 'comment')
             ->where('status = ?', 'approved')
-            ->where('authorId != ?', 0);
+            // 只认配置的站长 UID：注册读者在时光机页的评论不算说说
+            ->where('authorId = ?', $ownerId);
 
         $rowsQuery = $db->select(
             'coid',
@@ -62,7 +64,7 @@ class Shuoshuo
             ->where('cid = ?', $cid)
             ->where('type = ?', 'comment')
             ->where('status = ?', 'approved')
-            ->where('authorId != ?', 0)
+            ->where('authorId = ?', $ownerId)
             ->order('created', Db::SORT_DESC)
             ->page($page, $size);
 
@@ -95,7 +97,9 @@ class Shuoshuo
             throw new \RuntimeException('说说内容不能为空');
         }
 
-        if (mb_strlen($text) > self::MAX_LENGTH) {
+        // 按字节再兜一次：comments.text 是 TEXT（65535 字节），
+        // 中文按字符校验通过但字节可能溢出，预留 [secret] 标签的空间
+        if (mb_strlen($text) > self::MAX_LENGTH || strlen($text) > 65500) {
             throw new \RuntimeException('说说内容过长，最多 ' . self::MAX_LENGTH . ' 字');
         }
 
@@ -111,6 +115,7 @@ class Shuoshuo
 
         $user = self::adminUser($db, $authorId);
         $created = time();
+        $agent = $agent !== '' ? $agent : 'SxlbPublisher';
 
         $comment = [
             'cid' => $cid,
@@ -121,7 +126,8 @@ class Shuoshuo
             'mail' => $user['mail'],
             'url' => $user['url'],
             'ip' => $ip,
-            'agent' => $agent !== '' ? $agent : 'SxlbPublisher',
+            // comments.agent 是 varchar(511)：超长 UA 会溢出或被截断
+            'agent' => mb_substr($agent, 0, 255),
             'text' => $text,
             'type' => 'comment',
             'status' => 'approved',
@@ -151,7 +157,7 @@ class Shuoshuo
      *
      * @return array 解析后的说说，结构同列表项
      */
-    public static function update(Db $db, int $coid, string $text, bool $secret): array
+    public static function update(Db $db, int $coid, string $text, bool $secret, int $ownerId): array
     {
         $row = $db->fetchRow(
             $db->select(
@@ -175,7 +181,7 @@ class Shuoshuo
         if (
             $cid <= 0
             || (int) $row['cid'] !== $cid
-            || (int) $row['authorId'] <= 0
+            || (int) $row['authorId'] !== max(1, $ownerId)
         ) {
             throw new \RuntimeException('只能编辑时光机里的说说');
         }
@@ -186,7 +192,7 @@ class Shuoshuo
             throw new \RuntimeException('说说内容不能为空');
         }
 
-        if (mb_strlen($text) > self::MAX_LENGTH) {
+        if (mb_strlen($text) > self::MAX_LENGTH || strlen($text) > 65500) {
             throw new \RuntimeException('说说内容过长，最多 ' . self::MAX_LENGTH . ' 字');
         }
 
@@ -218,7 +224,7 @@ class Shuoshuo
      *
      * @return array{coid:int,deleted:bool}
      */
-    public static function delete(Db $db, int $coid): array
+    public static function delete(Db $db, int $coid, int $ownerId): array
     {
         $row = $db->fetchRow(
             $db->select('coid', 'cid', 'authorId', 'type')
@@ -235,7 +241,7 @@ class Shuoshuo
             $cid <= 0
             || (int) $row['cid'] !== $cid
             || (string) $row['type'] !== 'comment'
-            || (int) $row['authorId'] <= 0
+            || (int) $row['authorId'] !== max(1, $ownerId)
         ) {
             throw new \RuntimeException('只能删除时光机里的说说');
         }

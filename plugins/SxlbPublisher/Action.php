@@ -515,7 +515,8 @@ class Action extends Widget implements ActionInterface
         $this->ok(Shuoshuo::listing(
             Db::get(),
             max(1, $this->intParam('page', 1)),
-            min(50, max(1, $this->intParam('size', 20)))
+            min(50, max(1, $this->intParam('size', 20))),
+            max(1, (int) ($this->config->authorId ?? 1))
         ));
     }
 
@@ -549,7 +550,8 @@ class Action extends Widget implements ActionInterface
             Db::get(),
             $coid,
             (string) $this->param('text', ''),
-            (bool) $this->param('secret', false)
+            (bool) $this->param('secret', false),
+            max(1, (int) ($this->config->authorId ?? 1))
         ));
     }
 
@@ -563,7 +565,11 @@ class Action extends Widget implements ActionInterface
             $this->fail('缺少 coid');
         }
 
-        $this->ok(Shuoshuo::delete(Db::get(), $coid));
+        $this->ok(Shuoshuo::delete(
+            Db::get(),
+            $coid,
+            max(1, (int) ($this->config->authorId ?? 1))
+        ));
     }
 
     // ─── 独立页面 ──────────────────────────────────────────────────────────

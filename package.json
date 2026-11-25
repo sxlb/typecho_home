@@ -1,12 +1,12 @@
 {
   "name": "sxlb-writer",
   "private": true,
-  "version": "2.23.2",
+  "version": "2.23.3",
   "type": "module",
   "description": "凉薄博客安卓写作客户端",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/copy-vditor.mjs && vite build",
     "postinstall": "node scripts/copy-vditor.mjs",
     "sync": "npm run build && npx cap sync android"
   },

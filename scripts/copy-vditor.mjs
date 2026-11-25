@@ -14,8 +14,8 @@ const source = resolve(root, 'node_modules/vditor/dist');
 const target = resolve(root, 'public/vditor/dist');
 
 if (!existsSync(source)) {
-  console.warn('[copy-vditor] 未找到 node_modules/vditor，跳过');
-  process.exit(0);
+  // 缺少 Vditor 资源时构建必须失败：否则会产出编辑器打不开的 APK
+  throw new Error('[copy-vditor] 未找到 node_modules/vditor，请先安装依赖');
 }
 
 await rm(target, { recursive: true, force: true });

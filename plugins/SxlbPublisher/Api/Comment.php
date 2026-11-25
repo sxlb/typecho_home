@@ -164,6 +164,11 @@ class Comment
             throw new \RuntimeException('回复内容不能为空');
         }
 
+        // comments.text 是 TEXT（65535 字节），按字节兜底避免超长写入失败
+        if (strlen($text) > 65000) {
+            throw new \RuntimeException('回复内容过长，请精简后再发');
+        }
+
         $target = $db->fetchRow(
             $db->select('coid', 'cid', 'ownerId')->from('table.comments')->where('coid = ?', $parent)->limit(1)
         );
@@ -184,7 +189,8 @@ class Comment
             'mail' => (string) $user['mail'],
             'url' => (string) $user['url'],
             'ip' => $ip,
-            'agent' => $agent !== '' ? $agent : 'SxlbPublisher',
+            // comments.agent 是 varchar(511)：超长 UA 会溢出或被截断
+            'agent' => mb_substr($agent !== '' ? $agent : 'SxlbPublisher', 0, 255),
             'text' => $text,
             'type' => 'comment',
             'status' => 'approved',

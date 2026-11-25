@@ -1023,9 +1023,23 @@ class Admin
             $selected = is_array($selected)
                 ? array_values(array_intersect($builtin, array_map('strval', $selected)))
                 : [];
-            $other = array_filter(array_map('trim', explode(',', self::pick($values, 'attachmentTypesOther', ''))));
-            $other = array_values(array_filter($other, static function (string $ext): bool {
-                return preg_match('/^(php|php4|php5|sh|asp|jsp|rb|py|pl|dll|exe|bat)$/i', $ext) === 0;
+            $other = array_map(static function (string $ext): string {
+                // 统一小写并去掉前导点，避免大小写 / ".phtml" 绕过
+                return strtolower(ltrim(trim($ext), '.'));
+            }, explode(',', self::pick($values, 'attachmentTypesOther', '')));
+
+            $dangerous = [
+                'php', 'phtml', 'pht', 'phar', 'phps', 'php3', 'php4', 'php5', 'php7', 'php8',
+                'html', 'htm', 'shtml', 'xhtml', 'cgi', 'pl', 'py', 'rb', 'sh',
+                'asp', 'aspx', 'jsp', 'jspx', 'dll', 'exe', 'bat', 'cmd', 'com',
+                'htaccess', 'svg', 'xml', 'js', 'mjs',
+            ];
+
+            // 白名单式校验：只允许 1-10 位字母数字，且不在可执行 / 可渲染后缀里
+            $other = array_values(array_filter($other, static function (string $ext) use ($dangerous): bool {
+                return $ext !== ''
+                    && preg_match('/^[a-z0-9]{1,10}$/', $ext) === 1
+                    && !in_array($ext, $dangerous, true);
             }));
 
             $settings['attachmentTypes'] = implode(',', array_merge($selected, $other));

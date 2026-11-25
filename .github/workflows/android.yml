@@ -79,8 +79,11 @@ jobs:
           cd plugins
           zip -r ../sxlb-publisher.zip SxlbPublisher
 
+      # 只有 main 分支构建才发布 Release：v* 标签构建只做验证，
+      # 避免标签事件用 latest 标签覆盖对外下载地址
       # App 与插件分开发布：latest 始终指向 App，plugin-latest 固定指向插件
       - name: 发布 App Release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
@@ -94,6 +97,7 @@ jobs:
           overwrite_files: true
 
       - name: 发布插件 Release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: plugin-latest

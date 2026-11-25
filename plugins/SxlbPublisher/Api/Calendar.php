@@ -25,26 +25,34 @@ class Calendar
      */
     public static function month(Db $db, string $month): array
     {
+        $options = \Widget\Options::alloc();
+        // 时间戳按 UTC 存储，月边界与 day 都要换算到站点时区，
+        // 否则每月 1 日 0 点至时差内的文章会被归到上个月
+        $offset = (int) $options->timezone - (int) $options->serverTimezone;
+        $localNow = time() + $offset;
+
         if (!preg_match('/^(\d{4})-(\d{2})$/', $month, $match)) {
-            $month = date('Y-m');
+            $month = date('Y-m', $localNow);
             $match = [];
         }
 
-        $year = $match ? (int) $match[1] : (int) date('Y');
-        $mon = $match ? (int) $match[2] : (int) date('n');
+        $year = $match ? (int) $match[1] : (int) date('Y', $localNow);
+        $mon = $match ? (int) $match[2] : (int) date('n', $localNow);
 
         if ($mon < 1 || $mon > 12) {
-            $year = (int) date('Y');
-            $mon = (int) date('n');
+            $year = (int) date('Y', $localNow);
+            $mon = (int) date('n', $localNow);
         }
 
-        $start = mktime(0, 0, 0, $mon, 1, $year);
-        $end = mktime(0, 0, 0, $mon + 1, 1, $year);
+        $start = mktime(0, 0, 0, $mon, 1, $year) - $offset;
+        $end = mktime(0, 0, 0, $mon + 1, 1, $year) - $offset;
         $now = time();
 
         $rows = $db->fetchAll(
             $db->select('cid', 'title', 'slug', 'created', 'type', 'status')
                 ->from('table.contents')
+                // 只返回公开文章与草稿：私密 / 密码文章不进日历
+                ->where('table.contents.status = ?', 'publish')
                 // OR 条件必须自己加括号，否则与后面的时间范围 AND 组合会算错优先级
                 ->where('(table.contents.type = ? OR table.contents.type = ?)', 'post', 'post_draft')
                 ->where('table.contents.created >= ? AND table.contents.created < ?', $start, $end)
@@ -57,7 +65,7 @@ class Calendar
 
         foreach ($rows as $row) {
             $created = (int) $row['created'];
-            $day = date('Y-m-d', $created);
+            $day = date('Y-m-d', $created + $offset);
             $status = $row['type'] === 'post_draft'
                 ? 'draft'
                 : ($created > $now ? 'scheduled' : 'publish');

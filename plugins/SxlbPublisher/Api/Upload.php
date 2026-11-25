@@ -3,6 +3,7 @@
 namespace TypechoPlugin\SxlbPublisher\Api;
 
 use Typecho\Common;
+use Typecho\Db;
 use Typecho\Widget;
 use Widget\Options;
 use Widget\Upload as UploadWidget;
@@ -46,25 +47,47 @@ class Upload
             throw new \RuntimeException('非法的上传文件');
         }
 
+        // 关联文章时必须是自己名下的内容，避免把附件挂到其他人的文章
+        if ($cid > 0) {
+            $db = Db::get();
+            $row = $db->fetchRow(
+                $db->select('authorId')->from('table.contents')->where('cid = ?', $cid)->limit(1)
+            );
+
+            if (!$row || (int) $row['authorId'] !== $authorId) {
+                throw new \RuntimeException('只能给本人的文章上传附件');
+            }
+        }
+
         $result = self::store($file);
+        $meta = $result;
+        // 绝对路径只用于回收文件，不写入附件描述（避免泄露服务器路径）
+        unset($meta['absolute']);
 
         /** @var UploadWidget $widget */
         $widget = Widget::widget(UploadWidget::class);
 
-        $id = $widget->insert([
-            'title' => $result['name'],
-            'slug' => $result['name'],
-            'type' => 'attachment',
-            'status' => 'publish',
-            'text' => json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            'authorId' => $authorId,
-            'allowComment' => 1,
-            'allowPing' => 0,
-            'allowFeed' => 1,
-            'parent' => $cid,
-        ]);
+        try {
+            $id = $widget->insert([
+                'title' => $result['name'],
+                'slug' => $result['name'],
+                'type' => 'attachment',
+                'status' => 'publish',
+                'text' => json_encode($meta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'authorId' => $authorId,
+                'allowComment' => 1,
+                'allowPing' => 0,
+                'allowFeed' => 1,
+                'parent' => $cid,
+            ]);
+        } catch (\Throwable $e) {
+            // 写库失败时回收已落盘的文件，避免留下孤儿附件
+            @unlink($result['absolute']);
+            throw $e;
+        }
 
         if ($id <= 0) {
+            @unlink($result['absolute']);
             throw new \RuntimeException('附件记录写入失败');
         }
 
@@ -123,6 +146,8 @@ class Upload
             'size' => (int) (filesize($target) ?: ($file['size'] ?? 0)),
             'type' => $ext,
             'mime' => (string) ($file['type'] ?? ''),
+            // 绝对路径仅供写库失败时回收文件，不对外输出
+            'absolute' => $target,
         ];
     }
 }
