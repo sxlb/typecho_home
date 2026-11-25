@@ -152,7 +152,12 @@ export function migrateLegacyDraft() {
 
   if (legacy && (String(legacy.text || '').trim() || String(legacy.title || '').trim())) {
     const id = `draft-${(legacy.updatedAt || Date.now()).toString(36)}`;
-    safeSet(DRAFT_PREFIX + id, JSON.stringify(legacy));
+    const saved = safeSet(DRAFT_PREFIX + id, JSON.stringify(legacy));
+
+    // 配额满等写入失败时保留旧键，下次启动再试，避免唯一一份老草稿被删掉
+    if (!saved) {
+      return;
+    }
   }
 
   localStorage.removeItem(`${DRAFT_PREFIX}new`);

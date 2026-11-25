@@ -1927,10 +1927,13 @@ body.modal-open #view-editor .vditor-sv {
   background: rgba(27, 26, 24, 0.34);
   opacity: 0;
   transition: opacity 0.22s ease;
+  /* 关闭态不拦截点击：避免定时器异常时留下透明遮罩吃掉整屏操作 */
+  pointer-events: none;
 }
 
 .sheet-mask.open {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .sheet {

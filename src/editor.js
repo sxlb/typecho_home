@@ -490,8 +490,9 @@ let themeGridReady = false;
 
 /* ─── 底部抽屉通用逻辑 ─────────────────────────────────── */
 
-// 关闭动画延时器：快速连续开关时取消上一次，避免刚打开的面板被旧定时器隐藏
-let sheetTimer = null;
+// 关闭动画延时器：按面板分别存储。共用同一个定时器时，
+// 打开另一个面板会清掉正在关闭的面板的延时，留下透明遮罩拦截点击
+const sheetTimers = new Map();
 
 /** 通知 main.js 重新计算「是否有弹层打开」，用于锁定背景滚动 */
 function notifyOverlay() {
@@ -506,7 +507,8 @@ function openSheet(sheetId, maskId) {
     return;
   }
 
-  clearTimeout(sheetTimer);
+  clearTimeout(sheetTimers.get(sheetId));
+  sheetTimers.delete(sheetId);
   sheet.hidden = false;
   mask.hidden = false;
   sheet.setAttribute('aria-hidden', 'false');
@@ -530,12 +532,14 @@ function closeSheet(sheetId, maskId) {
   mask.classList.remove('open');
   sheet.setAttribute('aria-hidden', 'true');
 
-  clearTimeout(sheetTimer);
-  sheetTimer = setTimeout(() => {
+  clearTimeout(sheetTimers.get(sheetId));
+  const timer = setTimeout(() => {
     sheet.hidden = true;
     mask.hidden = true;
+    sheetTimers.delete(sheetId);
     notifyOverlay();
   }, 260);
+  sheetTimers.set(sheetId, timer);
 
   return true;
 }
@@ -1711,8 +1715,8 @@ const uploadState = { items: [], running: false };
 
 // 上传批次代号：销毁编辑器时递增，旧批次的异步结果据此丢弃，避免销毁后仍往正文插图
 let uploadEpoch = 0;
-// 发起上传时的插入位置：等待期间用户点到别处也不影响最终插入点
-let uploadAnchor = null;
+// 选图批次的序号：每批的插入位置存在各自的队列项上，互不覆盖
+let uploadBatch = 0;
 let uploadHideTimer = null;
 
 function ensureUploadBar() {
@@ -1857,9 +1861,16 @@ async function runUploadQueue() {
         continue;
       }
 
-      insert(`\n![${result.name || '图片'}](${result.url})\n`, uploadAnchor);
-      // 光标此时停在刚插入的图片之后，后续图片接着往后排，不会全部挤在同一点
-      uploadAnchor = rememberRange() || uploadAnchor;
+      insert(`\n![${result.name || '图片'}](${result.url})\n`, item.anchor);
+      // 光标此时停在刚插入的图片之后：把本批剩余待传图片的锚点一起推进，
+      // 保证同批图片按顺序排列，同时不影响另一批次已记下的位置
+      const next = rememberRange() || item.anchor;
+
+      uploadState.items.forEach((pending) => {
+        if (pending.batch === item.batch && pending.status === 'pending') {
+          pending.anchor = next;
+        }
+      });
       item.status = 'done';
     } catch (error) {
       if (epoch !== uploadEpoch) {
@@ -1906,11 +1917,13 @@ async function uploadFiles(files) {
     return;
   }
 
-  // 入队时记住光标位置；文件选择器关掉后选区可能已丢失，退回最后一次有效位置
-  uploadAnchor = rememberRange() || (lastEditorRange ? lastEditorRange.cloneRange() : null);
+  // 入队时记住光标位置；文件选择器关掉后选区可能已丢失，退回最后一次有效位置。
+  // 位置跟随队列项与批次号，上传中再次选图不会覆盖前一批的插入点
+  const anchor = rememberRange() || (lastEditorRange ? lastEditorRange.cloneRange() : null);
+  const batch = ++uploadBatch;
 
   files.forEach((file) => {
-    uploadState.items.push({ file, status: 'pending' });
+    uploadState.items.push({ file, status: 'pending', batch, anchor });
   });
 
   await runUploadQueue();
@@ -1945,7 +1958,6 @@ export function destroyEditor() {
   closeEditorSheets();
   // 递增批次号：仍在等待响应的上传请求回来后直接丢弃结果
   uploadEpoch += 1;
-  uploadAnchor = null;
   hideUploadBar();
   uploadState.items = [];
   uploadState.running = false;

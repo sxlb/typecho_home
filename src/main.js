@@ -4066,8 +4066,9 @@ function referrerHost(value) {
 
 // ─── 抽屉通用 ────────────────────────────────────────────────────────────
 
-// 抽屉关闭动画延时器：快速连续开关时取消上一次
-let sheetTimer = null;
+// 抽屉关闭动画延时器：按面板分别存储。共用同一个定时器时，
+// 打开另一个面板会清掉正在关闭的面板的延时，留下透明遮罩拦截点击
+const sheetTimers = new WeakMap();
 
 /** 所有会盖住页面的弹层，任意一个打开时锁住底层滚动 */
 const OVERLAY_IDS = [
@@ -4102,7 +4103,8 @@ function syncModalLock() {
 }
 
 function showSheet(sheet, mask) {
-  clearTimeout(sheetTimer);
+  clearTimeout(sheetTimers.get(sheet));
+  sheetTimers.delete(sheet);
   sheet.hidden = false;
   mask.hidden = false;
   // 面板里的按钮要能被辅助技术与键盘访问，hidden/aria-hidden 必须成对切换
@@ -4118,12 +4120,14 @@ function hideSheet(sheet, mask) {
   sheet.classList.remove('open');
   mask.classList.remove('open');
   sheet.setAttribute('aria-hidden', 'true');
-  clearTimeout(sheetTimer);
-  sheetTimer = setTimeout(() => {
+  clearTimeout(sheetTimers.get(sheet));
+  const timer = setTimeout(() => {
     sheet.hidden = true;
     mask.hidden = true;
+    sheetTimers.delete(sheet);
     syncModalLock();
   }, 260);
+  sheetTimers.set(sheet, timer);
 }
 
 // ─── 发布前检查 ──────────────────────────────────────────────────────────

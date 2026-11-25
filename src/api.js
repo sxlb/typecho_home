@@ -131,9 +131,13 @@ async function send(url, options, path, rawBody) {
   const timer = setTimeout(() => controller.abort(), 45000);
 
   let response;
+  let text;
 
   try {
     response = await fetch(url, { ...options, headers, signal: controller.signal });
+    // 读取响应体也必须在超时保护内：只拿到响应头不算请求完成，
+    // 否则弱网下 text() 一直挂着会让上传队列永远停在「上传中」
+    text = await response.text();
   } catch (error) {
     throw new Error(
       error.name === 'AbortError' ? '请求超时，请检查网络后重试' : '网络请求失败，请检查服务器地址与网络',
@@ -142,12 +146,16 @@ async function send(url, options, path, rawBody) {
     clearTimeout(timer);
   }
 
-  const text = await response.text();
   let payload;
 
   try {
     payload = JSON.parse(text);
   } catch {
+    throw new Error(`服务器返回异常（HTTP ${response.status}）`);
+  }
+
+  // 合法 JSON 也可能不是对象（null / 数组 / 标量），直接读 status 会抛 TypeError
+  if (!payload || typeof payload !== 'object') {
     throw new Error(`服务器返回异常（HTTP ${response.status}）`);
   }
 

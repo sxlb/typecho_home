@@ -70,7 +70,7 @@ export function initAdmin(options = {}) {
       return;
     }
 
-    state.tool.page += 1;
+    // 页码由 loadToolPage 在请求成功后提交，失败时不会跳过一页
     loadToolPage(false);
   });
   el.save.addEventListener('click', savePanel);
@@ -449,6 +449,8 @@ function openTool(kind) {
     items: [],
     total: 0,
     busy: false,
+    // 请求令牌：递增后旧请求的响应会被丢弃
+    reqId: 0,
     edit: null,
     categories: [],
     tags: [],
@@ -459,6 +461,7 @@ function openTool(kind) {
 
   el.config.hidden = true;
   el.error.hidden = true;
+  el.loading.hidden = true;
   el.overview.hidden = true;
   el.tools.hidden = false;
   el.toolsTitle.textContent = kind === 'comments'
@@ -632,23 +635,36 @@ function renderToolFilters() {
 async function loadToolPage(reset) {
   const tool = state.tool;
 
-  if (!tool || tool.busy) {
+  if (!tool) {
     return;
   }
 
+  // 请求令牌：切换筛选 / 搜索时旧请求可能后返回，令牌不一致就丢弃，
+  // 避免旧结果覆盖新筛选的列表
+  const reqId = (tool.reqId || 0) + 1;
+  tool.reqId = reqId;
   tool.busy = true;
   el.toolsMore.disabled = true;
   el.toolsMore.textContent = '加载中…';
 
+  // 页码在请求成功后才提交：失败时保持原页码，避免「加载更多」跳过一页
+  const page = reset ? 1 : tool.page + 1;
+  const isCurrent = () => state.tool === tool && tool.reqId === reqId;
+
   try {
     if (tool.kind === 'metas') {
       const data = await callAdmin('metas');
+
+      if (!isCurrent()) {
+        return;
+      }
+
       tool.categories = Array.isArray(data?.categories) ? data.categories : [];
       tool.tags = Array.isArray(data?.tags) ? data.tags : [];
       tool.items = tool.status === 'category' ? tool.categories : tool.tags;
       tool.total = tool.items.length;
     } else {
-      const query = { page: tool.page, size: tool.kind === 'comments' ? 20 : 24 };
+      const query = { page, size: tool.kind === 'comments' ? 20 : 24 };
 
       if (tool.kind === 'comments' && tool.status !== 'all') {
         query.status = tool.status;
@@ -659,18 +675,30 @@ async function loadToolPage(reset) {
       }
 
       const data = await callAdmin(tool.kind === 'comments' ? 'comments' : 'media', { query });
+
+      if (!isCurrent()) {
+        return;
+      }
+
       const items = Array.isArray(data?.items) ? data.items : [];
 
+      tool.page = page;
       tool.items = reset ? items : tool.items.concat(items);
       tool.total = Number(data?.total || 0);
     }
 
     renderToolItems();
   } catch (error) {
+    if (!isCurrent()) {
+      return;
+    }
+
     toast(error.message);
   } finally {
-    tool.busy = false;
-    updateMore();
+    if (isCurrent()) {
+      tool.busy = false;
+      updateMore();
+    }
   }
 }
 
@@ -1564,13 +1592,24 @@ async function openPanel(panel) {
       data = await callAdmin('themeConfig');
     }
 
+    // 请求期间用户已经切到评论 / 媒体等工具页：丢弃这次配置结果，
+    // 否则配置面板与工具面板会叠在一起，返回键也要按两次
+    if (state.tool) {
+      return;
+    }
+
     state.panel = { ...panel, title: data?.title || panel.title };
     el.configTitle.textContent = state.panel.title;
     renderFields(Array.isArray(data?.fields) ? data.fields : []);
     el.overview.hidden = true;
+    el.tools.hidden = true;
     el.config.hidden = false;
     el.body.scrollTop = 0;
   } catch (error) {
+    if (state.tool) {
+      return;
+    }
+
     showError(error.message);
   } finally {
     state.busy = false;
