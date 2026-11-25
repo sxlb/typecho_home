@@ -6,8 +6,12 @@
  */
 
 import { callAdmin, uploadImage } from './api.js';
+import { listReplies, addReply, removeReply } from './local.js';
 
 const $ = (selector) => document.querySelector(selector);
+
+// 评论搜索防抖计时器
+let searchTimer = 0;
 
 const el = {
   body: $('#admin-body'),
@@ -145,6 +149,8 @@ async function load() {
 function showList() {
   state.panel = null;
   state.tool = null;
+  // 离开列表时取消未发出的搜索，避免旧 tool 被异步回调使用
+  window.clearTimeout(searchTimer);
   clearPendingOff();
   el.config.hidden = true;
   el.tools.hidden = true;
@@ -432,6 +438,8 @@ function openTool(kind) {
     edit: null,
     categories: [],
     tags: [],
+    // 评论搜索关键词，其他工具不使用
+    keyword: '',
   };
   state.panel = null;
 
@@ -461,6 +469,53 @@ function renderToolFilters() {
 
   if (tool.kind === 'comments') {
     el.toolsFilters.hidden = false;
+
+    // 搜索框：作者 / 内容 / 文章标题，交给服务端检索，才能搜到未加载的页
+    const box = document.createElement('div');
+    box.className = 'tool-search';
+
+    const input = document.createElement('input');
+    input.type = 'search';
+    input.placeholder = '搜索作者、内容或文章标题';
+    input.value = tool.keyword;
+
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'tool-search-clear';
+    clear.textContent = '×';
+    clear.setAttribute('aria-label', '清空搜索');
+    clear.hidden = !tool.keyword;
+
+    input.addEventListener('input', () => {
+      const value = input.value;
+      clear.hidden = !value;
+
+      // 输入防抖：停止 320ms 后才请求，避免每敲一个字都打一次接口
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(() => {
+        // 期间切走了工具，丢弃这次请求
+        if (state.tool !== tool) {
+          return;
+        }
+
+        tool.keyword = value.trim();
+        tool.page = 1;
+        tool.items = [];
+        loadToolPage(true);
+      }, 320);
+    });
+
+    clear.addEventListener('click', () => {
+      window.clearTimeout(searchTimer);
+      tool.keyword = '';
+      tool.page = 1;
+      tool.items = [];
+      renderToolFilters();
+      loadToolPage(true);
+    });
+
+    box.append(input, clear);
+    el.toolsFilters.appendChild(box);
 
     COMMENT_FILTERS.forEach((filter) => {
       const button = document.createElement('button');
@@ -583,6 +638,10 @@ async function loadToolPage(reset) {
 
       if (tool.kind === 'comments' && tool.status !== 'all') {
         query.status = tool.status;
+      }
+
+      if (tool.kind === 'comments' && tool.keyword) {
+        query.keyword = tool.keyword;
       }
 
       const data = await callAdmin(tool.kind === 'comments' ? 'comments' : 'media', { query });
@@ -952,6 +1011,76 @@ function renderComment(item) {
   replyInput.rows = 2;
   replyInput.placeholder = '以站长身份回复…';
 
+  // 常用短语：点击填入、长按 600ms 删除；只存在本机，不上传服务端
+  const phraseBar = document.createElement('div');
+  phraseBar.className = 'reply-phrases';
+
+  const phraseList = document.createElement('div');
+  phraseList.className = 'reply-phrase-list';
+
+  const phraseSave = document.createElement('button');
+  phraseSave.type = 'button';
+  phraseSave.className = 'reply-phrase-save';
+  phraseSave.textContent = '存为短语';
+  phraseSave.addEventListener('click', () => {
+    if (!replyInput.value.trim()) {
+      toast('先输入回复内容');
+      return;
+    }
+
+    if (addReply(replyInput.value)) {
+      toast('已存入常用短语');
+      renderPhraseList();
+    } else {
+      toast('这句话已在短语库里');
+    }
+  });
+
+  function renderPhraseList() {
+    phraseList.innerHTML = '';
+
+    listReplies().forEach((phrase) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'reply-phrase';
+      chip.textContent = phrase.text;
+
+      let pressTimer = 0;
+      let longPressed = false;
+
+      chip.addEventListener('pointerdown', () => {
+        longPressed = false;
+        pressTimer = window.setTimeout(() => {
+          longPressed = true;
+          removeReply(phrase.id);
+          renderPhraseList();
+          toast('已删除短语');
+        }, 600);
+      });
+
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach((type) => {
+        chip.addEventListener(type, () => window.clearTimeout(pressTimer));
+      });
+
+      chip.addEventListener('click', () => {
+        if (longPressed) {
+          longPressed = false;
+          return;
+        }
+
+        replyInput.value = phrase.text;
+        replyInput.focus();
+      });
+
+      phraseList.appendChild(chip);
+    });
+
+    phraseList.hidden = phraseList.childElementCount === 0;
+  }
+
+  renderPhraseList();
+  phraseBar.append(phraseList, phraseSave);
+
   const replySend = document.createElement('button');
   replySend.type = 'button';
   replySend.className = 'btn primary small';
@@ -967,7 +1096,7 @@ function renderComment(item) {
     runToolAction('commentReply', { coid: item.coid, text: value }, '回复已发送');
   });
 
-  replyBox.append(replyInput, replySend);
+  replyBox.append(phraseBar, replyInput, replySend);
   actions.appendChild(toolButton('回复', 'ghost', () => {
     replyBox.hidden = !replyBox.hidden;
 

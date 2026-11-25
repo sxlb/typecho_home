@@ -745,7 +745,8 @@ class Action extends Widget implements ActionInterface
                     max(1, $this->intParam('page', 1)),
                     min(50, max(1, $this->intParam('size', 20))),
                     (string) $this->param('status', ''),
-                    $this->intParam('cid')
+                    $this->intParam('cid'),
+                    (string) $this->param('keyword', '')
                 ));
                 break;
             case 'commentApprove':

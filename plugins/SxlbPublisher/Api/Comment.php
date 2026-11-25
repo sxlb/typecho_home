@@ -21,10 +21,18 @@ class Comment
      * 评论列表
      *
      * @param string $status approved / waiting / spam / all
+     * @param int $cid 只查某篇文章下的评论，0 表示不限
+     * @param string $keyword 按作者 / 内容 / 文章标题模糊匹配
      * @return array{items: array, total: int, page: int, size: int}
      */
-    public static function listing(Db $db, int $page, int $size, string $status, int $cid = 0): array
-    {
+    public static function listing(
+        Db $db,
+        int $page,
+        int $size,
+        string $status,
+        int $cid = 0,
+        string $keyword = ''
+    ): array {
         $filter = self::normalizeStatus($status);
 
         // 统计与列表保持同一口径：都关联 contents，孤儿评论不计入
@@ -51,6 +59,17 @@ class Comment
 
         self::applyFilter($countQuery, $filter, $cid);
         self::applyFilter($rowsQuery, $filter, $cid);
+
+        // 搜索：作者、内容、所属文章标题，转义 LIKE 通配符避免用户输入 % _ 被当成模式
+        $keyword = trim($keyword);
+
+        if ($keyword !== '') {
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $keyword) . '%';
+            $condition = 'table.comments.author LIKE ? OR table.comments.text LIKE ? OR table.contents.title LIKE ?';
+
+            $countQuery->where($condition, $like, $like, $like);
+            $rowsQuery->where($condition, $like, $like, $like);
+        }
 
         $total = (int) $db->fetchObject($countQuery)->num;
         $items = [];

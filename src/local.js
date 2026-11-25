@@ -200,3 +200,54 @@ export function removeSnippet(id) {
 
   return next;
 }
+
+/* ─── 常用回复短语（评论回复用） ─────────────────────────────── */
+
+const REPLY_KEY = 'sxlb.replies';
+const MAX_REPLIES = 30;
+
+export function listReplies() {
+  const list = readJson(REPLY_KEY);
+
+  return Array.isArray(list) ? list : [];
+}
+
+/**
+ * 新增一条回复短语；内容为空或已存在时不保存
+ *
+ * @param {string} text
+ * @returns {object | null}
+ */
+export function addReply(text) {
+  const value = String(text || '').trim();
+
+  if (!value) {
+    return null;
+  }
+
+  const list = listReplies();
+
+  // 同一句话只保留一条，避免重复堆叠
+  if (list.some((item) => item.text === value)) {
+    return null;
+  }
+
+  const reply = {
+    id: `r${Date.now().toString(36)}`,
+    text: value,
+    at: Date.now(),
+  };
+
+  if (!safeSet(REPLY_KEY, JSON.stringify([reply, ...list].slice(0, MAX_REPLIES)))) {
+    return null;
+  }
+
+  return reply;
+}
+
+export function removeReply(id) {
+  const next = listReplies().filter((item) => item.id !== id);
+  safeSet(REPLY_KEY, JSON.stringify(next));
+
+  return next;
+}

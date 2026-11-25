@@ -2643,6 +2643,110 @@ body.modal-open #view-editor .vditor-sv {
   align-self: flex-end;
 }
 
+/* 评论搜索 */
+.tool-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 0 100%;
+}
+
+.tool-search input {
+  width: 100%;
+  padding: 9px 34px 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.tool-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--field-focus);
+}
+
+/* 自带的清除按钮与自定义按钮会重复，统一用后者的 */
+.tool-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.tool-search-clear {
+  position: absolute;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.tool-search-clear:active {
+  background: var(--hover);
+}
+
+/* 回复短语：点击填入，长按删除 */
+.reply-phrases {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reply-phrase-list {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.reply-phrase-list::-webkit-scrollbar {
+  height: 0;
+}
+
+.reply-phrase {
+  flex: 0 0 auto;
+  max-width: 168px;
+  padding: 5px 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.reply-phrase:active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.reply-phrase-save {
+  flex: none;
+  padding: 5px 6px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
 .media-item {
   display: flex;
   align-items: flex-start;
