@@ -35,6 +35,7 @@ const el = {
     shuoshuo: $('#view-shuoshuo'),
     album: $('#view-album'),
     calendar: $('#view-calendar'),
+    me: $('#view-me'),
     pages: $('#view-pages'),
     links: $('#view-links'),
     stats: $('#view-stats'),
@@ -42,7 +43,11 @@ const el = {
     editor: $('#view-editor'),
     settings: $('#view-settings'),
   },
-  adminEntry: $('#btn-admin'),
+  tabbar: $('#tabbar'),
+  meServer: $('#me-server'),
+  meVersion: $('#me-version'),
+  meAdmin: $('#me-admin'),
+  meAdminHint: $('#me-admin-hint'),
   listLoading: $('#list-loading'),
   listEmpty: $('#list-empty'),
   listItems: $('#list-items'),
@@ -192,6 +197,8 @@ const state = {
   pagesFrom: 'list',
   // 从相册 / 日历进入的文章编辑器，返回时回到来源视图（'' 表示首页列表）
   returnView: '',
+  // 设置页的来源：me 表示从「我的」进入
+  settingsFrom: 'list',
   // 当前编辑的文章是否属于相册分类（决定「相册描述」字段是否显示）
   imagePost: false,
   status: 'draft',
@@ -226,12 +233,81 @@ const state = {
 
 // ─── 通用 ────────────────────────────────────────────────────────────────
 
+/** 顶层视图：显示底部导航 */
+const TAB_VIEWS = ['list', 'shuoshuo', 'album', 'me'];
+
 function show(view) {
   state.view = view;
 
   Object.entries(el.views).forEach(([name, node]) => {
     node.hidden = name !== view;
   });
+
+  if (el.tabbar) {
+    el.tabbar.hidden = !TAB_VIEWS.includes(view);
+
+    el.tabbar.querySelectorAll('.tab').forEach((tab) => {
+      tab.classList.toggle('active', tab.dataset.view === view);
+    });
+  }
+
+  // 底部导航存在时，浮动按钮 / 提示条需要抬高，避免被遮挡
+  document.body.classList.toggle('has-tabbar', TAB_VIEWS.includes(view));
+}
+
+/**
+ * 底部导航切换
+ *
+ * 未配置时只允许停留在「写作」与「我的」，其余 Tab 直接引导去设置。
+ */
+function switchTab(view) {
+  if (!view || view === state.view) {
+    return;
+  }
+
+  if (!isConfigured() && view !== 'list' && view !== 'me') {
+    openSettings();
+    return;
+  }
+
+  if (view === 'shuoshuo') {
+    openShuoshuo();
+    return;
+  }
+
+  if (view === 'album') {
+    openAlbum();
+    return;
+  }
+
+  if (view === 'me') {
+    openMe();
+    return;
+  }
+
+  show('list');
+
+  if (!state.posts.length) {
+    loadPosts({ reset: true });
+  }
+}
+
+/** 「我的」：服务器、站点管理入口、设置与版本 */
+function openMe() {
+  const settings = getSettings();
+
+  if (el.meServer) {
+    el.meServer.textContent = settings.server || '未配置服务器';
+  }
+
+  if (el.meVersion) {
+    el.meVersion.textContent = state.update?.version
+      ? `v${APP_VERSION} · 最新 v${state.update.version}`
+      : `v${APP_VERSION}`;
+  }
+
+  applyAdminEntry();
+  show('me');
 }
 
 function toast(message) {
@@ -301,10 +377,18 @@ function applyFontSize(value = getSettings().editorFontSize) {
 }
 
 /**
- * 管理模式入口：只控制首页按钮显隐，服务端还有独立的管理接口开关
+ * 管理模式入口：「我的」页里的站点管理按钮，服务端还有独立的管理接口开关
  */
 function applyAdminEntry() {
-  el.adminEntry.hidden = (getSettings().adminMode || DEFAULT_SETTINGS.adminMode) !== 'on';
+  const enabled = (getSettings().adminMode || DEFAULT_SETTINGS.adminMode) === 'on';
+
+  if (el.meAdmin) {
+    el.meAdmin.hidden = !enabled;
+  }
+
+  if (el.meAdminHint) {
+    el.meAdminHint.hidden = enabled;
+  }
 }
 
 // ─── 界面风格 ────────────────────────────────────────────────────────────
@@ -4465,6 +4549,9 @@ function restoreVersion(version) {
 // ─── 设置与更新 ──────────────────────────────────────────────────────────
 
 function openSettings() {
+  // 记住入口：从「我的」进来的，返回时回「我的」
+  state.settingsFrom = state.view === 'me' ? 'me' : 'list';
+
   const settings = getSettings();
   el.settings.server.value = settings.server || DEFAULT_SETTINGS.server;
   el.settings.token.value = settings.token || '';
@@ -4694,9 +4781,22 @@ function bind() {
     resetBatchConfirm();
     runBatch('draft');
   });
-  $('#btn-settings').addEventListener('click', openSettings);
-  $('#btn-shuoshuo').addEventListener('click', openShuoshuo);
-  $('#btn-shuoshuo-back').addEventListener('click', () => show('list'));
+  // 底部导航：写作 / 时光机 / 相册 / 我的
+  el.tabbar?.addEventListener('click', (event) => {
+    const tab = event.target.closest('.tab');
+
+    if (tab) {
+      switchTab(tab.dataset.view);
+    }
+  });
+
+  // 「我的」页入口
+  $('#me-admin').addEventListener('click', () => {
+    show('admin');
+    openAdmin();
+  });
+  $('#me-settings').addEventListener('click', openSettings);
+  $('#me-update').addEventListener('click', () => checkUpdate(true));
   $('#btn-shuoshuo-refresh').addEventListener('click', () => loadShuoshuo({ reset: true }));
   $('#btn-shuoshuo-new').addEventListener('click', () => openShuoshuoSheet());
   $('#shuoshuo-sheet-close').addEventListener('click', closeShuoshuoSheet);
@@ -4708,8 +4808,6 @@ function bind() {
     shuoshuo.page += 1;
     loadShuoshuo({ reset: false });
   });
-  $('#btn-album').addEventListener('click', openAlbum);
-  $('#btn-album-back').addEventListener('click', () => show('shuoshuo'));
   $('#btn-album-refresh').addEventListener('click', () => loadAlbum({ reset: true }));
   $('#btn-album-new').addEventListener('click', openAlbumSheet);
   $('#album-sheet-close').addEventListener('click', closeAlbumSheet);
@@ -4743,11 +4841,7 @@ function bind() {
       toast('没有可打开的地址');
     }
   });
-  $('#btn-admin').addEventListener('click', () => {
-    show('admin');
-    openAdmin();
-  });
-  $('#btn-admin-back').addEventListener('click', () => show('list'));
+  $('#btn-admin-back').addEventListener('click', () => show('me'));
   $('#btn-pages-back').addEventListener('click', closePages);
   $('#btn-pages-refresh').addEventListener('click', () => loadPages({ reset: true }));
   $('#btn-pages-new').addEventListener('click', openNewPage);
@@ -4832,12 +4926,18 @@ function bind() {
   $('#btn-settings-back').addEventListener('click', () => {
     saveSettingsFromForm();
 
-    if (isConfigured()) {
-      show('list');
-      loadPosts();
-    } else {
+    if (!isConfigured()) {
       show('settings');
+      return;
     }
+
+    if (state.settingsFrom === 'me') {
+      openMe();
+      return;
+    }
+
+    show('list');
+    loadPosts();
   });
 
   $('#btn-history').addEventListener('click', openHistory);
@@ -5055,14 +5155,16 @@ function bind() {
         closeSheet();
       } else if (state.view === 'admin') {
         if (!handleAdminBack()) {
-          show('list');
+          show('me');
         }
       } else if (state.view === 'editor') {
         backToList();
       } else if (state.view === 'shuoshuo') {
         show('list');
       } else if (state.view === 'album') {
-        show('shuoshuo');
+        show('list');
+      } else if (state.view === 'me') {
+        show('list');
       } else if (state.view === 'pages') {
         closePages();
       } else if (state.view === 'links') {
@@ -5074,7 +5176,12 @@ function bind() {
       } else if (state.view === 'calendar') {
         show('admin');
       } else if (state.view === 'settings') {
-        isConfigured() ? show('list') : App.exitApp();
+        // 设置可能从「我的」进入，返回时回到来源视图
+        if (state.settingsFrom === 'me') {
+          show('me');
+        } else {
+          isConfigured() ? show('list') : App.exitApp();
+        }
       } else {
         App.exitApp();
       }
@@ -5095,6 +5202,8 @@ themeQuery?.addEventListener?.('change', () => {
 });
 
 migrateLegacyDraft();
+// 初始视图：同步底部导航的选中态与 body 标记
+show('list');
 initAdmin({
   onToast: toast,
   onOpenPages: () => openPages('admin'),
