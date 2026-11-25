@@ -231,6 +231,9 @@ const state = {
   selectedCids: new Set(),
 };
 
+// 打开详情（文章 / 页面）的请求序号：弱网连点两篇时只认最后一次，旧响应直接丢弃
+let openDetailSeq = 0;
+
 // ─── 通用 ────────────────────────────────────────────────────────────────
 
 /** 顶层视图：显示底部导航 */
@@ -739,9 +742,14 @@ function renderList() {
   });
 
   serverItems.forEach((item) => {
-    // 本地草稿比服务端新：说明上次改动没同步上去，列表上给出提示
+    // 本地草稿比服务端新：说明上次改动没同步上去，列表上给出提示。
+    // 列表没有正文，标题与缩略名都一致时视为「只是打开过」，不再误报
     const local = readDraft(String(item.cid));
-    const unsynced = Boolean(local && (local.updatedAt || 0) > (item.modified || 0) * 1000);
+    const unsynced = Boolean(
+      local &&
+        (local.updatedAt || 0) > (item.modified || 0) * 1000 &&
+        postDraftSummaryDiffers(local, item),
+    );
 
     entries.push({
       at: item.created,
@@ -805,6 +813,14 @@ function updateListHeader() {
   const suffix = state.hasMore && state.filter !== 'local' ? '+' : '';
 
   el.listCount.textContent = total ? `${total}${suffix}` : '';
+}
+
+/** 文章列表只有标题与缩略名：两者都一致时视为「只是打开过」，不再标「本地有改动」 */
+function postDraftSummaryDiffers(draft, item) {
+  return (
+    String(draft.title ?? '') !== String(item.title ?? '') ||
+    String(draft.slug ?? '') !== String(item.slug ?? '')
+  );
 }
 
 /** 列表分组：今天 / 昨天 / 本周 / 更早 */
@@ -958,6 +974,16 @@ function setSelectMode(on) {
   updateBatchBar();
 }
 
+/** 列表筛选条件变化后，清掉可能已不可见的批量选择，避免改到看不见的文章 */
+function resetBatchSelection() {
+  if (!state.selecting || state.selectedCids.size === 0) {
+    return;
+  }
+
+  state.selectedCids.clear();
+  updateBatchBar();
+}
+
 function toggleSelect(cid, node) {
   if (state.selectedCids.has(cid)) {
     state.selectedCids.delete(cid);
@@ -998,6 +1024,9 @@ function resetBatchConfirm() {
   }
 }
 
+// 服务端单次最多处理 50 篇，超出时前端分片串行提交
+const BATCH_LIMIT = 50;
+
 /**
  * 执行批量改状态
  *
@@ -1014,17 +1043,26 @@ async function runBatch(status) {
   el.batchPublish.disabled = true;
   el.batchDraft.disabled = true;
 
+  let count = 0;
+  let skipped = 0;
+
   try {
-    const data = await call('postBatch', { method: 'POST', body: { cids, status } });
-    const count = Number(data?.count) || 0;
-    const skipped = Number(data?.skipped) || 0;
+    for (let offset = 0; offset < cids.length; offset += BATCH_LIMIT) {
+      const chunk = cids.slice(offset, offset + BATCH_LIMIT);
+      const data = await call('postBatch', { method: 'POST', body: { cids: chunk, status } });
+
+      count += Number(data?.count) || 0;
+      skipped += Number(data?.skipped) || 0;
+    }
+
     const label = status === 'publish' ? '已发布' : '已转为草稿';
 
     setSelectMode(false);
     await loadPosts({ reset: true });
     toast(skipped > 0 ? `${label} ${count} 篇，跳过 ${skipped} 篇` : `${label} ${count} 篇`);
   } catch (error) {
-    toast(error.message);
+    // 分片提交中途失败时说明已完成的数量，避免用户以为一篇都没改
+    toast(count > 0 ? `已处理 ${count} 篇，后续失败：${error.message}` : error.message);
     updateBatchBar();
   }
 }
@@ -1364,6 +1402,7 @@ function renderTagChips() {
       }
       chip.classList.toggle('active');
       refreshCheck();
+      markDirty();
     });
     el.tagChips.appendChild(chip);
   }
@@ -1386,6 +1425,7 @@ function renderCategoryChips() {
       chip.classList.toggle('active');
       syncAlbumField();
       refreshCheck();
+      markDirty();
     });
     el.categoryChips.appendChild(chip);
   }
@@ -1407,6 +1447,8 @@ function startEditor({
   state.currentUrl = url || '';
   state.pageMeta = pageMeta;
   state.dirty = false;
+  // 每次进入编辑器重新给一次配额提示机会
+  state.quotaWarned = false;
   el.title.value = title || '';
   fillSheet(meta || {});
   el.editorStatus.textContent = cid ? '已保存' : kind === 'page' ? '新页面' : '新文章';
@@ -1422,9 +1464,7 @@ function startEditor({
     value: text || '',
     mode: getSettings().editorMode,
     onChange: () => {
-      state.dirty = true;
-      el.editorStatus.textContent = '编辑中…';
-      scheduleAutosave();
+      markDirty();
     },
     getCid: () => state.cid,
     onError: (message) => toast(message),
@@ -1443,21 +1483,34 @@ const EDITOR_MODE_LABELS = {
   code: '纯代码',
 };
 
+/** 标记有未保存改动：状态栏、自动保存与离开时的兜底都依赖这个标记 */
+function markDirty() {
+  state.dirty = true;
+  el.editorStatus.textContent = '编辑中…';
+  scheduleAutosave();
+}
+
 function scheduleAutosave() {
   clearTimeout(state.autosaveTimer);
   state.autosaveTimer = setTimeout(() => {
-    persistLocal();
+    const saved = persistLocal();
     maybeSnapshot();
     const now = new Date();
-    el.editorStatus.textContent = `已存本地 ${String(now.getHours()).padStart(2, '0')}:${String(
-      now.getMinutes(),
-    ).padStart(2, '0')}`;
+    const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    // 写失败时不能继续显示「已存本地」，否则用户会以为内容已经落盘
+    el.editorStatus.textContent = saved ? `已存本地 ${time}` : '本地保存失败';
   }, 1200);
 }
 
+/**
+ * 写入本地草稿
+ *
+ * @returns {boolean} 是否成功落盘（没有草稿键时视为无需保存）
+ */
 function persistLocal() {
   if (!state.draftKey) {
-    return;
+    return true;
   }
 
   const data = {
@@ -1492,6 +1545,8 @@ function persistLocal() {
     state.quotaWarned = true;
     toast('本地存储空间不足，草稿未能保存，请清理历史版本后重试');
   }
+
+  return saved;
 }
 
 /**
@@ -1583,8 +1638,17 @@ function draftDiffers(draft, post) {
 }
 
 async function openPost(cid) {
+  const seq = (openDetailSeq += 1);
+  const fromView = state.view;
+
   try {
     const post = await call('post', { query: { cid } });
+
+    // 期间用户又点了别的文章或离开了入口视图：丢弃这次结果，避免串文章
+    if (seq !== openDetailSeq || state.view !== fromView) {
+      return;
+    }
+
     const local = readDraft(String(cid));
     // 时间更新且内容确实不同才恢复本地：打开过文章也会落一份草稿，
     // 不能仅凭时间戳把它判成「本地更新」，否则会把网页端的修改回滚
@@ -1618,13 +1682,19 @@ async function openPost(cid) {
       toast('已恢复本地草稿');
     }
   } catch (error) {
+    if (seq !== openDetailSeq || state.view !== fromView) {
+      return;
+    }
+
     toast(error.message);
   }
 }
 
 function backToList() {
-  // 输入后 1.2 秒内返回时防抖计时器会被清掉，这里补一次落盘与快照，避免丢内容
-  if (state.draftKey) {
+  // 输入后 1.2 秒内返回时防抖计时器会被清掉，这里补一次落盘与快照，避免丢内容。
+  // 只有真正改动过才写：打开后原样返回不应生成「本地草稿」，
+  // 否则列表会把每篇打开过的文章都标成「本地有改动」
+  if (state.draftKey && state.dirty) {
     persistLocal();
     maybeSnapshot(true);
   }
@@ -2606,7 +2676,7 @@ function openCalendar() {
   loadCalendar();
 }
 
-async function loadCalendar() {
+async function loadCalendar({ fallbackMonth = '' } = {}) {
   const seq = (calendar.seq += 1);
   calendar.loading = true;
   el.calendarLoading.hidden = false;
@@ -2628,6 +2698,12 @@ async function loadCalendar() {
       return;
     }
 
+    // 切月失败时回退到原月份，保证标题、网格、明细与 calendar.month 同源
+    if (fallbackMonth) {
+      calendar.month = fallbackMonth;
+      renderCalendar();
+    }
+
     toast(error.message);
   } finally {
     if (seq === calendar.seq) {
@@ -2640,10 +2716,11 @@ async function loadCalendar() {
 function shiftCalendarMonth(delta) {
   const [year, mon] = calendar.month.split('-').map(Number);
   const next = new Date(year, mon - 1 + delta, 1);
+  const prev = calendar.month;
 
   calendar.month = monthKey(next);
   calendar.selected = '';
-  loadCalendar();
+  loadCalendar({ fallbackMonth: prev });
 }
 
 function renderCalendar() {
@@ -2877,7 +2954,17 @@ async function loadPages({ reset = true } = {}) {
 }
 
 function pageDraftItems() {
-  return listDrafts().filter((draft) => String(draft.id).startsWith('page-'));
+  // 只有「新建页面」的草稿才是独立条目；已发布页面的本地缓冲（page-<cid>）
+  // 在对应条目上以「本地有改动」呈现，避免同一页面出现两行、点错后新建重复页面
+  return listDrafts().filter((draft) => String(draft.id).startsWith('page-draft-'));
+}
+
+/** 页面列表只带标题与缩略名，用它们做轻量差异判断，避免未修改也报「本地有改动」 */
+function pageDraftSummaryDiffers(draft, page) {
+  return (
+    String(draft.title ?? '') !== String(page.title ?? '') ||
+    String(draft.slug ?? '') !== String(page.slug ?? '')
+  );
 }
 
 function renderPages() {
@@ -2914,6 +3001,12 @@ function renderPages() {
     const templateBadge = templateName
       ? `<span class="badge local">${escapeHtml(templateName)}</span>`
       : '';
+    const local = readDraft(`page-${item.cid}`);
+    const unsynced = Boolean(
+      local &&
+        local.updatedAt > (item.modified || 0) * 1000 &&
+        pageDraftSummaryDiffers(local, item),
+    );
 
     fragment.appendChild(
       createItem({
@@ -2921,6 +3014,7 @@ function renderPages() {
         title: item.title || '未命名页面',
         badge: statusBadge + templateBadge,
         time: formatDate(item.created),
+        unsynced,
         item: { local: false, kind: 'page', ...item },
       }),
     );
@@ -2940,8 +3034,17 @@ function updatePagesMore() {
 }
 
 async function openPage(cid) {
+  const seq = (openDetailSeq += 1);
+  const fromView = state.view;
+
   try {
     const page = await call('page', { query: { cid } });
+
+    // 期间用户又打开了别的页面或离开了页面列表：丢弃这次结果
+    if (seq !== openDetailSeq || state.view !== fromView) {
+      return;
+    }
+
     const key = `page-${cid}`;
     const local = readDraft(key);
     // 与服务端对比后再决定是否恢复本地，避免把网页端的修改回滚
@@ -2978,6 +3081,10 @@ async function openPage(cid) {
       toast('已恢复本地草稿');
     }
   } catch (error) {
+    if (seq !== openDetailSeq || state.view !== fromView) {
+      return;
+    }
+
     toast(error.message);
   }
 }
@@ -3013,7 +3120,8 @@ function openLocalPageDraft(id) {
   state.status = draft.status || 'publish';
 
   startEditor({
-    cid: 0,
+    // 草稿里存了 cid：兼容旧版本误把已发布页面的本地缓冲塞进「新建草稿」的情况
+    cid: Number(draft.cid) || 0,
     draftKey: id,
     kind: 'page',
     title: draft.title || '',
@@ -3063,7 +3171,15 @@ function renderPageTemplates(selected = '') {
     el.pageTemplate.appendChild(option);
   });
 
-  el.pageTemplate.value = selected && templates[selected] ? selected : '';
+  // 模板文件已不在主题里时保留原值并标注，避免只改排序就把模板清空
+  if (selected && !templates[selected]) {
+    const stale = document.createElement('option');
+    stale.value = selected;
+    stale.textContent = `${selected}（模板已失效）`;
+    el.pageTemplate.appendChild(stale);
+  }
+
+  el.pageTemplate.value = selected || '';
 }
 
 function openPageSheet() {
@@ -3089,9 +3205,8 @@ function applyPageSheet() {
     slug: el.pageSlug.value.trim(),
     allowComment: el.pageAllowComment.checked,
   };
-  state.dirty = true;
   closePageSheet();
-  scheduleAutosave();
+  markDirty();
 }
 
 async function submitPage() {
@@ -3109,11 +3224,19 @@ async function submitPage() {
   }
 
   const meta = state.pageMeta || {};
+  const slug = String(meta.slug || '').trim();
+
+  // 与服务端一致的缩略名规则：只允许字母、数字、下划线与连字符
+  if (slug && /[^\w-]/.test(slug)) {
+    toast('页面缩略名只能使用字母、数字、下划线和连字符');
+    return;
+  }
+
   const body = {
     cid: state.cid,
     title,
     text,
-    slug: meta.slug || '',
+    slug,
     template: meta.template || '',
     status: meta.status === 'hidden' ? 'hidden' : 'publish',
     order: Number(meta.order || 0),
@@ -3871,6 +3994,11 @@ async function loadVisitors(reset = false) {
       return;
     }
 
+    // 失败时回退页码：否则下次「加载更多」会跳过整页数据
+    if (!reset) {
+      visitors.page = Math.max(1, visitors.page - 1);
+    }
+
     toast(error.message);
 
     if (reset) {
@@ -4164,7 +4292,12 @@ function collectCheck({ title, text, isDraft }) {
   const slug = el.slug.value.trim();
 
   if (!title) {
-    items.push({ level: 'error', label: '标题还没填', fix: 'title' });
+    // 草稿允许空标题（服务端会兜底「未命名文档」），正式发布必须填
+    items.push(
+      isDraft
+        ? { level: 'warn', label: '标题为空，将保存为「未命名文档」', fix: 'title' }
+        : { level: 'error', label: '标题还没填', fix: 'title' },
+    );
   } else if (title.length > 40) {
     items.push({ level: 'warn', label: `标题 ${title.length} 字，超过 40 字在列表里容易折行`, fix: 'title' });
   }
@@ -4353,7 +4486,9 @@ function openSheet() {
 
   resetPublishConfirm();
   setSheetStep(1, { silent: true });
-  renderCheck({ isDraft: true, expand: false });
+  // 面板同时提供「存草稿 / 发布」，预览按更严格的发布口径展示，
+  // 避免清单显示通过、点发布却跳回第一步报错
+  renderCheck({ isDraft: false, expand: false });
   showSheet(el.sheet, el.sheetMask);
 }
 
@@ -4557,7 +4692,7 @@ function openSettings() {
   state.settingsFrom = state.view === 'me' ? 'me' : 'list';
 
   const settings = getSettings();
-  el.settings.server.value = settings.server || DEFAULT_SETTINGS.server;
+  el.settings.server.value = settings.server;
   el.settings.token.value = settings.token || '';
   el.settings.secret.value = settings.secret || '';
   el.settings.mode.value = settings.editorMode || DEFAULT_SETTINGS.editorMode;
@@ -4606,7 +4741,12 @@ function renderVersion() {
 }
 
 async function testConnection() {
-  saveSettingsFromForm();
+  const result = saveSettingsFromForm();
+
+  if (!result.ok) {
+    toast(result.message);
+    return;
+  }
 
   if (!isConfigured()) {
     toast('请先填写完整信息');
@@ -4621,9 +4761,23 @@ async function testConnection() {
   }
 }
 
+/**
+ * 从表单读取并保存设置
+ *
+ * 地址留空表示主动断开：不再回落到默认站点，避免把 Token / 签名
+ * 发往用户没有指定的域名。
+ *
+ * @returns {{ok: boolean, message?: string}}
+ */
 function saveSettingsFromForm() {
-  saveSettings({
-    server: el.settings.server.value.trim() || DEFAULT_SETTINGS.server,
+  const server = el.settings.server.value.trim();
+
+  if (server && !/^https?:\/\/\S+$/i.test(server)) {
+    return { ok: false, message: '服务器地址需以 http:// 或 https:// 开头' };
+  }
+
+  const saved = saveSettings({
+    server,
     token: el.settings.token.value.trim(),
     secret: el.settings.secret.value.trim(),
     editorMode: el.settings.mode.value || DEFAULT_SETTINGS.editorMode,
@@ -4633,10 +4787,55 @@ function saveSettingsFromForm() {
     customTheme: readCustomForm(),
     adminMode: el.settings.adminMode.value || DEFAULT_SETTINGS.adminMode,
   });
+
+  if (!saved) {
+    return { ok: false, message: '设置未能保存：本地存储空间不足，请清理草稿历史' };
+  }
+
   applyStyle();
   applyTheme();
   applyFontSize();
   applyAdminEntry();
+
+  return { ok: true };
+}
+
+/**
+ * 离开设置页：保存 → 校验 → 按来源返回
+ *
+ * @param {{allowExit?: boolean}} [options] allowExit 为真且表单全空时允许退出 App
+ */
+function leaveSettings({ allowExit = false } = {}) {
+  const result = saveSettingsFromForm();
+
+  if (!result.ok) {
+    toast(result.message);
+    return;
+  }
+
+  if (!isConfigured()) {
+    const blank =
+      !el.settings.server.value.trim() &&
+      !el.settings.token.value.trim() &&
+      !el.settings.secret.value.trim();
+
+    if (allowExit && blank) {
+      App.exitApp();
+      return;
+    }
+
+    toast('请先填写服务器地址、Token 与 Secret');
+    show('settings');
+    return;
+  }
+
+  if (state.settingsFrom === 'me') {
+    openMe();
+    return;
+  }
+
+  show('list');
+  loadPosts();
 }
 
 function compareVersion(a, b) {
@@ -4655,7 +4854,15 @@ function compareVersion(a, b) {
   return 0;
 }
 
+// 更新检查进行中标记：避免连点重复请求、重复写剪贴板
+let updateChecking = false;
+
 async function checkUpdate(manual = false) {
+  if (updateChecking) {
+    return;
+  }
+
+  updateChecking = true;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
 
@@ -4702,6 +4909,7 @@ async function checkUpdate(manual = false) {
     }
   } finally {
     clearTimeout(timer);
+    updateChecking = false;
   }
 }
 
@@ -4928,20 +5136,7 @@ function bind() {
     }
   });
   $('#btn-settings-back').addEventListener('click', () => {
-    saveSettingsFromForm();
-
-    if (!isConfigured()) {
-      show('settings');
-      return;
-    }
-
-    if (state.settingsFrom === 'me') {
-      openMe();
-      return;
-    }
-
-    show('list');
-    loadPosts();
+    leaveSettings();
   });
 
   $('#btn-history').addEventListener('click', openHistory);
@@ -4952,6 +5147,7 @@ function bind() {
 
   el.listSearch.addEventListener('input', () => {
     state.query = el.listSearch.value;
+    resetBatchSelection();
     renderList();
 
     // 防抖后按标题从服务端重新检索，搜索结果不再受已加载页数限制
@@ -4976,6 +5172,7 @@ function bind() {
     }
 
     state.filter = button.dataset.filter;
+    resetBatchSelection();
     [...el.listFilters.children].forEach((chip) => {
       chip.classList.toggle('active', chip === button);
     });
@@ -4990,6 +5187,7 @@ function bind() {
   // 分类筛选：切换后重新从服务端拉第一页
   el.listCategory?.addEventListener('change', () => {
     state.category = Number(el.listCategory.value) || 0;
+    resetBatchSelection();
 
     if (isConfigured()) {
       loadPosts({ reset: true });
@@ -5002,8 +5200,12 @@ function bind() {
   window.addEventListener('sxlb:overlay', syncModalLock);
 
   el.title.addEventListener('input', () => {
-    state.dirty = true;
-    scheduleAutosave();
+    markDirty();
+  });
+
+  // 摘要 / 封面 / 缩略名 / 相册描述 / 定时时间：改动后同样进入本地自动保存
+  [el.summary, el.thumb, el.slug, el.albumText, el.created].forEach((input) => {
+    input.addEventListener('input', markDirty);
   });
 
   // 输入标签后回车 / 逗号，直接落成可点的标签
@@ -5026,13 +5228,26 @@ function bind() {
     names.forEach((name) => state.selectedTagNames.add(name));
     el.tags.value = '';
     renderTagChips();
+    markDirty();
   });
 
   $('#btn-test').addEventListener('click', testConnection);
   $('#btn-save-settings').addEventListener('click', () => {
-    saveSettingsFromForm();
+    const result = saveSettingsFromForm();
+
+    if (!result.ok) {
+      toast(result.message);
+      return;
+    }
+
+    if (!isConfigured()) {
+      toast('请先填写服务器地址、Token 与 Secret');
+      return;
+    }
+
+    // 保存后留在设置页；列表在「返回」时统一加载，
+    // 避免列表请求失败的网络提示覆盖「设置已保存」
     toast('设置已保存');
-    loadPosts();
   });
   $('#btn-check-update').addEventListener('click', () => checkUpdate(true));
 
@@ -5113,6 +5328,7 @@ function bind() {
       try {
         const result = await uploadImage(input.files[0], state.cid);
         el.thumb.value = result.url;
+        markDirty();
         toast('缩略图已上传');
       } catch (error) {
         toast(error.message);
@@ -5180,12 +5396,9 @@ function bind() {
       } else if (state.view === 'calendar') {
         show('admin');
       } else if (state.view === 'settings') {
-        // 设置可能从「我的」进入，返回时回到来源视图
-        if (state.settingsFrom === 'me') {
-          show('me');
-        } else {
-          isConfigured() ? show('list') : App.exitApp();
-        }
+        // 与屏幕上的返回按钮一致：先保存表单，再按来源返回；
+        // 表单全空且未配置时才允许退出 App
+        leaveSettings({ allowExit: true });
       } else {
         App.exitApp();
       }
