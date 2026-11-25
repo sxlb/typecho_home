@@ -55,6 +55,10 @@
             </button>
           </div>
         </header>
+        <div class="list-head">
+          <h1 class="list-title" id="list-title">全部文章</h1>
+          <span class="list-count" id="list-count"></span>
+        </div>
         <div class="list-tools">
           <div class="list-search-row">
             <input
@@ -79,6 +83,13 @@
         <main class="list-body" id="list-body">
           <div class="list-loading" id="list-loading">加载中…</div>
           <div class="empty" id="list-empty" hidden>
+            <div class="empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 3.5h8l4 4v13H6z" />
+                <path d="M14 3.5V8h4" />
+                <path d="M9 12h6M9 15.5h4" />
+              </svg>
+            </div>
             <p class="empty-title">还没有文章</p>
             <p class="empty-desc">点右下角开始写第一篇</p>
           </div>
@@ -433,99 +444,123 @@
           <div class="topbar-actions"></div>
         </header>
         <main class="settings-body">
-          <label class="field">
-            <span class="field-label">服务器地址</span>
-            <input id="set-server" type="url" placeholder="https://blog.sxlb.xyz" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span class="field-label">Token</span>
-            <input id="set-token" type="text" placeholder="X-Sxlb-Token" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span class="field-label">Secret</span>
-            <input id="set-secret" type="text" placeholder="HMAC 密钥" autocomplete="off" />
-          </label>
-          <label class="field">
-            <span class="field-label">编辑器模式</span>
-            <select id="set-editor-mode">
-              <option value="ir">即时渲染（推荐，边写边渲染）</option>
-              <option value="wysiwyg">所见即所得（更像 Word，表格可视化编辑）</option>
-              <option value="sv">分屏预览（左边源码，右边效果）</option>
-              <option value="code">纯代码（只看 Markdown 源码，点「看成品」预览）</option>
-            </select>
-          </label>
-          <label class="field">
-            <span class="field-label">写作字号</span>
-            <select id="set-editor-size">
-              <option value="small">小（14px，一屏字多）</option>
-              <option value="normal">标准（15.5px）</option>
-              <option value="large">大（17px，久看不累）</option>
-              <option value="xlarge">特大（19px，长辈友好）</option>
-            </select>
-          </label>
-          <label class="field">
-            <span class="field-label">外观</span>
-            <select id="set-theme">
-              <option value="auto">跟随系统</option>
-              <option value="light">浅色</option>
-              <option value="dark">深色</option>
-            </select>
-          </label>
-          <div class="field">
-            <span class="field-label">界面风格</span>
-            <div class="style-picker" id="set-style">
-              <button class="style-option" type="button" data-style="classic">
-                <span class="style-swatches"><i style="background:#f6f5f2"></i><i style="background:#ffffff"></i><i style="background:#1f6f5c"></i></span>
-                <span>经典</span>
-              </button>
-              <button class="style-option" type="button" data-style="paper">
-                <span class="style-swatches"><i style="background:#f3efe6"></i><i style="background:#fffdf8"></i><i style="background:#b5492f"></i></span>
-                <span>纸感</span>
-              </button>
-              <button class="style-option" type="button" data-style="soft">
-                <span class="style-swatches"><i style="background:#f2f5f4"></i><i style="background:#ffffff"></i><i style="background:#2e7d6b"></i></span>
-                <span>柔和</span>
-              </button>
-              <button class="style-option" type="button" data-style="contrast">
-                <span class="style-swatches"><i style="background:#ffffff"></i><i style="background:#fafaf8"></i><i style="background:#ff5a36"></i></span>
-                <span>高对比</span>
-              </button>
-              <button class="style-option" type="button" data-style="custom">
-                <span class="style-swatches"><i style="background:#e7e4de"></i><i style="background:#ffffff"></i><i style="background:#6f6c65"></i></span>
-                <span>自定义</span>
-              </button>
-            </div>
-          </div>
-          <div class="custom-theme" id="custom-theme" hidden>
-            <div class="field-row">
-              <label class="field half">
-                <span class="field-label">主色</span>
-                <input id="set-accent" type="color" />
+          <section class="settings-group">
+            <h2 class="settings-group-title">连接</h2>
+            <div class="settings-card">
+              <label class="field">
+                <span class="field-label">服务器地址</span>
+                <input id="set-server" type="url" placeholder="https://blog.sxlb.xyz" autocomplete="off" />
               </label>
-              <label class="field half">
-                <span class="field-label">背景色</span>
-                <input id="set-bg" type="color" />
+              <label class="field">
+                <span class="field-label">Token</span>
+                <input id="set-token" type="text" placeholder="X-Sxlb-Token" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span class="field-label">Secret</span>
+                <input id="set-secret" type="text" placeholder="HMAC 密钥" autocomplete="off" />
               </label>
             </div>
-            <div class="field-row">
-              <label class="field half">
-                <span class="field-label">卡片色</span>
-                <input id="set-surface" type="color" />
+          </section>
+
+          <section class="settings-group">
+            <h2 class="settings-group-title">写作</h2>
+            <div class="settings-card">
+              <label class="field">
+                <span class="field-label">编辑器模式</span>
+                <select id="set-editor-mode">
+                  <option value="ir">即时渲染（推荐，边写边渲染）</option>
+                  <option value="wysiwyg">所见即所得（更像 Word，表格可视化编辑）</option>
+                  <option value="sv">分屏预览（左边源码，右边效果）</option>
+                  <option value="code">纯代码（只看 Markdown 源码，点「看成品」预览）</option>
+                </select>
               </label>
-              <label class="field half">
-                <span class="field-label">圆角 <b id="set-radius-value">18</b>px</span>
-                <input id="set-radius" type="range" min="4" max="20" step="1" />
+              <label class="field">
+                <span class="field-label">写作字号</span>
+                <select id="set-editor-size">
+                  <option value="small">小（14px，一屏字多）</option>
+                  <option value="normal">标准（15.5px）</option>
+                  <option value="large">大（17px，久看不累）</option>
+                  <option value="xlarge">特大（19px，长辈友好）</option>
+                </select>
               </label>
             </div>
-            <p class="settings-hint">背景色与卡片色只影响浅色模式；深色模式自动沿用内置深色底，避免文字看不清。</p>
-          </div>
-          <label class="field">
-            <span class="field-label">管理模式</span>
-            <select id="set-admin-mode">
-              <option value="off">关闭（首页不显示管理入口）</option>
-              <option value="on">开启（可查看概览与插件配置）</option>
-            </select>
-          </label>
+          </section>
+
+          <section class="settings-group">
+            <h2 class="settings-group-title">外观</h2>
+            <div class="settings-card">
+              <label class="field">
+                <span class="field-label">外观</span>
+                <select id="set-theme">
+                  <option value="auto">跟随系统</option>
+                  <option value="light">浅色</option>
+                  <option value="dark">深色</option>
+                </select>
+              </label>
+              <div class="field">
+                <span class="field-label">界面风格</span>
+                <div class="style-picker" id="set-style">
+                  <button class="style-option" type="button" data-style="classic">
+                    <span class="style-swatches"><i style="background:#f6f5f2"></i><i style="background:#ffffff"></i><i style="background:#1f6f5c"></i></span>
+                    <span>经典</span>
+                  </button>
+                  <button class="style-option" type="button" data-style="paper">
+                    <span class="style-swatches"><i style="background:#f3efe6"></i><i style="background:#fffdf8"></i><i style="background:#b5492f"></i></span>
+                    <span>纸感</span>
+                  </button>
+                  <button class="style-option" type="button" data-style="soft">
+                    <span class="style-swatches"><i style="background:#f2f5f4"></i><i style="background:#ffffff"></i><i style="background:#2e7d6b"></i></span>
+                    <span>柔和</span>
+                  </button>
+                  <button class="style-option" type="button" data-style="contrast">
+                    <span class="style-swatches"><i style="background:#ffffff"></i><i style="background:#fafaf8"></i><i style="background:#ff5a36"></i></span>
+                    <span>高对比</span>
+                  </button>
+                  <button class="style-option" type="button" data-style="custom">
+                    <span class="style-swatches"><i style="background:#e7e4de"></i><i style="background:#ffffff"></i><i style="background:#6f6c65"></i></span>
+                    <span>自定义</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="settings-card custom-theme" id="custom-theme" hidden>
+              <div class="field-row">
+                <label class="field half">
+                  <span class="field-label">主色</span>
+                  <input id="set-accent" type="color" />
+                </label>
+                <label class="field half">
+                  <span class="field-label">背景色</span>
+                  <input id="set-bg" type="color" />
+                </label>
+              </div>
+              <div class="field-row">
+                <label class="field half">
+                  <span class="field-label">卡片色</span>
+                  <input id="set-surface" type="color" />
+                </label>
+                <label class="field half">
+                  <span class="field-label">圆角 <b id="set-radius-value">18</b>px</span>
+                  <input id="set-radius" type="range" min="4" max="20" step="1" />
+                </label>
+              </div>
+              <p class="settings-hint">背景色与卡片色只影响浅色模式；深色模式自动沿用内置深色底，避免文字看不清。</p>
+            </div>
+          </section>
+
+          <section class="settings-group">
+            <h2 class="settings-group-title">其他</h2>
+            <div class="settings-card">
+              <label class="field">
+                <span class="field-label">管理模式</span>
+                <select id="set-admin-mode">
+                  <option value="off">关闭（首页不显示管理入口）</option>
+                  <option value="on">开启（可查看概览与插件配置）</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
           <div class="settings-actions">
             <button class="btn ghost" id="btn-test">测试连接</button>
             <button class="btn primary" id="btn-save-settings">保存设置</button>

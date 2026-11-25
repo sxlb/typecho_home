@@ -47,6 +47,8 @@ const el = {
   listEmpty: $('#list-empty'),
   listItems: $('#list-items'),
   listMore: $('#list-more'),
+  listTitle: $('#list-title'),
+  listCount: $('#list-count'),
   listSearch: $('#list-search'),
   listFilters: $('#list-filters'),
   listCategory: $('#list-category'),
@@ -203,6 +205,8 @@ const state = {
   searchTimer: null,
   toastTimer: null,
   posts: [],
+  // 当前筛选下的服务端文章总数，用于列表顶部计数
+  total: 0,
   filter: 'all',
   // 分类筛选：0 表示全部分类，其余为 mid
   category: 0,
@@ -528,6 +532,7 @@ async function loadPosts({ reset = true } = {}) {
     });
 
     state.posts = merged;
+    state.total = typeof data.total === 'number' ? data.total : merged.length;
     state.hasMore =
       typeof data.total === 'number' ? merged.length < data.total : items.length >= PAGE_SIZE;
 
@@ -600,6 +605,7 @@ function renderList() {
   const { filter } = state;
 
   updateListMore();
+  updateListHeader();
 
   const serverItems = visibleServerItems();
 
@@ -632,18 +638,20 @@ function renderList() {
     return;
   }
 
-  const fragment = document.createDocumentFragment();
+  // 本地草稿与服务端文章合并后按时间倒序，再按「今天 / 昨天 / 本周 / 更早」分组
+  const entries = [];
 
   drafts.forEach((draft) => {
-    fragment.appendChild(
-      createItem({
+    entries.push({
+      at: (draft.updatedAt || Date.now()) / 1000,
+      node: createItem({
         key: draft.id,
         title: draft.title || '未命名草稿',
-        badge: '<span class="badge local">本地草稿</span>',
         time: formatDate((draft.updatedAt || Date.now()) / 1000),
+        status: 'local',
         item: { local: true, id: draft.id, title: draft.title, text: draft.text },
       }),
-    );
+    });
   });
 
   serverItems.forEach((item) => {
@@ -651,23 +659,37 @@ function renderList() {
     const local = readDraft(String(item.cid));
     const unsynced = Boolean(local && (local.updatedAt || 0) > (item.modified || 0) * 1000);
 
-    const badge = item.scheduled
-      ? '<span class="badge scheduled">定时</span>'
-      : item.status === 'draft'
-        ? '<span class="badge draft">草稿</span>'
-        : '<span class="badge">已发布</span>';
-
-    const localBadge = unsynced ? '<span class="badge local">本地有改动</span>' : '';
-
-    fragment.appendChild(
-      createItem({
+    entries.push({
+      at: item.created,
+      node: createItem({
         key: `post-${item.cid}`,
         title: item.title || '未命名文档',
-        badge: badge + localBadge,
         time: formatDate(item.created),
+        status: item.scheduled ? 'scheduled' : item.status === 'draft' ? 'draft' : 'published',
+        unsynced,
         item: { local: false, ...item },
       }),
-    );
+    });
+  });
+
+  entries.sort((a, b) => b.at - a.at);
+
+  const fragment = document.createDocumentFragment();
+  let currentGroup = '';
+
+  entries.forEach(({ at, node }) => {
+    const group = groupLabel(at);
+
+    if (group !== currentGroup) {
+      currentGroup = group;
+
+      const title = document.createElement('h2');
+      title.className = 'list-group-title';
+      title.textContent = group;
+      fragment.appendChild(title);
+    }
+
+    fragment.appendChild(node);
   });
 
   el.listItems.appendChild(fragment);
@@ -676,6 +698,51 @@ function renderList() {
   if (state.selecting) {
     updateBatchBar();
   }
+}
+
+/** 列表顶部大标题与数量 */
+function updateListHeader() {
+  if (!el.listTitle) {
+    return;
+  }
+
+  const labels = {
+    all: '全部文章',
+    publish: '已发布',
+    draft: '草稿',
+    scheduled: '定时',
+    local: '本地草稿',
+  };
+
+  el.listTitle.textContent = labels[state.filter] || '全部文章';
+
+  const localCount = localDraftItems().length;
+  const total = state.filter === 'local' ? localCount : state.total || state.posts.length;
+  const suffix = state.hasMore && state.filter !== 'local' ? '+' : '';
+
+  el.listCount.textContent = total ? `${total}${suffix}` : '';
+}
+
+/** 列表分组：今天 / 昨天 / 本周 / 更早 */
+function groupLabel(timestamp) {
+  const date = new Date(timestamp * 1000);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const time = date.getTime();
+
+  if (time >= startOfToday) {
+    return '今天';
+  }
+
+  if (time >= startOfToday - 86400000) {
+    return '昨天';
+  }
+
+  if (time >= startOfToday - 6 * 86400000) {
+    return '本周';
+  }
+
+  return '更早';
 }
 
 /** 「加载更多」只在远端还有下一页且当前不是本地草稿筛选时出现 */
@@ -689,9 +756,18 @@ function updateListMore() {
   el.listMore.disabled = state.listLoading;
 }
 
-function createItem({ title, badge, time, item }) {
+function createItem({ title, badge = '', time, status = '', unsynced = false, item }) {
   const wrap = document.createElement('div');
   wrap.className = 'post-item';
+
+  // status 只在文章列表传：页面列表沿用彩色徽标
+  if (status) {
+    wrap.classList.add(`status-${status}`);
+  }
+
+  if (unsynced) {
+    wrap.classList.add('unsynced');
+  }
 
   // 本地草稿还没同步到服务端，无法批量改状态，保持正常打开行为
   const selectable = state.selecting && !item.local;
@@ -701,7 +777,27 @@ function createItem({ title, badge, time, item }) {
   main.className = 'post-main';
   main.innerHTML = '<div class="post-title"></div><div class="post-meta"></div>';
   main.querySelector('.post-title').textContent = title;
-  main.querySelector('.post-meta').innerHTML = `${badge}<span>${time}</span>`;
+
+  const statusLabels = {
+    published: '已发布',
+    draft: '草稿',
+    scheduled: '定时',
+    local: '本地草稿',
+  };
+  const meta = [];
+
+  if (status) {
+    meta.push(`<span class="post-state">${statusLabels[status] || status}</span>`);
+  } else if (badge) {
+    meta.push(badge);
+  }
+
+  if (unsynced) {
+    meta.push('<span class="post-state notice">本地有改动</span>');
+  }
+
+  meta.push(`<span>${time}</span>`);
+  main.querySelector('.post-meta').innerHTML = meta.join('');
   main.addEventListener('click', () => {
     if (selectable) {
       toggleSelect(item.cid, wrap);
