@@ -394,6 +394,54 @@
               <option value="dark">深色</option>
             </select>
           </label>
+          <div class="field">
+            <span class="field-label">界面风格</span>
+            <div class="style-picker" id="set-style">
+              <button class="style-option" type="button" data-style="classic">
+                <span class="style-swatches"><i style="background:#f6f5f2"></i><i style="background:#ffffff"></i><i style="background:#1f6f5c"></i></span>
+                <span>经典</span>
+              </button>
+              <button class="style-option" type="button" data-style="paper">
+                <span class="style-swatches"><i style="background:#f3efe6"></i><i style="background:#fffdf8"></i><i style="background:#b5492f"></i></span>
+                <span>纸感</span>
+              </button>
+              <button class="style-option" type="button" data-style="soft">
+                <span class="style-swatches"><i style="background:#f2f5f4"></i><i style="background:#ffffff"></i><i style="background:#2e7d6b"></i></span>
+                <span>柔和</span>
+              </button>
+              <button class="style-option" type="button" data-style="contrast">
+                <span class="style-swatches"><i style="background:#ffffff"></i><i style="background:#fafaf8"></i><i style="background:#ff5a36"></i></span>
+                <span>高对比</span>
+              </button>
+              <button class="style-option" type="button" data-style="custom">
+                <span class="style-swatches"><i style="background:#e7e4de"></i><i style="background:#ffffff"></i><i style="background:#6f6c65"></i></span>
+                <span>自定义</span>
+              </button>
+            </div>
+          </div>
+          <div class="custom-theme" id="custom-theme" hidden>
+            <div class="field-row">
+              <label class="field half">
+                <span class="field-label">主色</span>
+                <input id="set-accent" type="color" />
+              </label>
+              <label class="field half">
+                <span class="field-label">背景色</span>
+                <input id="set-bg" type="color" />
+              </label>
+            </div>
+            <div class="field-row">
+              <label class="field half">
+                <span class="field-label">卡片色</span>
+                <input id="set-surface" type="color" />
+              </label>
+              <label class="field half">
+                <span class="field-label">圆角 <b id="set-radius-value">18</b>px</span>
+                <input id="set-radius" type="range" min="4" max="20" step="1" />
+              </label>
+            </div>
+            <p class="settings-hint">背景色与卡片色只影响浅色模式；深色模式自动沿用内置深色底，避免文字看不清。</p>
+          </div>
           <label class="field">
             <span class="field-label">管理模式</span>
             <select id="set-admin-mode">

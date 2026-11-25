@@ -17,6 +17,15 @@ export const DEFAULT_SETTINGS = {
   editorFontSize: 'normal',
   // 外观：auto 跟随系统 / light 浅色 / dark 深色
   theme: 'auto',
+  // 界面风格：classic 经典 / paper 纸感 / soft 柔和 / contrast 高对比 / custom 自定义
+  style: 'soft',
+  // 自定义主题：背景与卡片色只在浅色模式生效，深色沿用内置深色底
+  customTheme: {
+    accent: '#2e7d6b',
+    bg: '#f2f5f4',
+    surface: '#ffffff',
+    radius: 18,
+  },
   // 管理模式：on 显示入口 / off 隐藏入口（服务端还需开启「管理接口」）
   adminMode: 'off',
 };
@@ -26,9 +35,13 @@ const SETTINGS_KEY = 'sxlb.settings';
 export function getSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
-    return { ...DEFAULT_SETTINGS, ...saved };
+    return {
+      ...DEFAULT_SETTINGS,
+      ...saved,
+      customTheme: { ...DEFAULT_SETTINGS.customTheme, ...(saved.customTheme || {}) },
+    };
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return { ...DEFAULT_SETTINGS, customTheme: { ...DEFAULT_SETTINGS.customTheme } };
   }
 }
 

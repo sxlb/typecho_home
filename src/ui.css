@@ -47,6 +47,148 @@
   color-scheme: dark;
 }
 
+/* ─── 界面风格预设 ─────────────────────────────────────── */
+
+/* 纸感书卷：暖纸底、朱砂强调、小圆角、几乎无阴影 */
+:root[data-style='paper'] {
+  --bg: #f3efe6;
+  --surface: #fffdf8;
+  --ink: #201d18;
+  --ink-2: #5a534a;
+  --ink-3: #7a7268;
+  --line: #ded6c8;
+  --accent: #b5492f;
+  --accent-soft: #f6e7df;
+  --info: #4a6f8e;
+  --warn: #a8762a;
+  --danger: #b5492f;
+  --topbar: rgba(243, 239, 230, 0.94);
+  --hover: #ebe4d8;
+  --field: #fbf8f1;
+  --field-focus: #fffdf8;
+  --radius: 6px;
+  --shadow: 0 1px 0 rgba(32, 29, 24, 0.05);
+}
+
+/* 柔和层次：灰绿底、大圆角、带绿调的柔和投影 */
+:root[data-style='soft'] {
+  --bg: #f2f5f4;
+  --surface: #ffffff;
+  --ink: #16211d;
+  --ink-2: #4e5a55;
+  --ink-3: #6c7773;
+  --line: #e3e9e6;
+  --accent: #2e7d6b;
+  --accent-soft: #e6f2ee;
+  --info: #3d6f9e;
+  --warn: #b8802f;
+  --danger: #c2453d;
+  --topbar: rgba(242, 245, 244, 0.92);
+  --hover: #e9efec;
+  --field: #fbfdfc;
+  --field-focus: #ffffff;
+  --radius: 18px;
+  --shadow: 0 1px 2px rgba(22, 33, 29, 0.04), 0 6px 20px rgba(31, 111, 92, 0.08);
+}
+
+/* 高对比编辑：白底、黑描边、亮橙强调、硬边无阴影 */
+:root[data-style='contrast'] {
+  --bg: #ffffff;
+  --surface: #fafaf8;
+  --ink: #111111;
+  --ink-2: #4a4a4a;
+  --ink-3: #6b6b6b;
+  --line: #d9d6cf;
+  --accent: #ff5a36;
+  --accent-soft: #fff0eb;
+  --info: #2b5fd9;
+  --warn: #b26a00;
+  --danger: #d92d20;
+  --topbar: rgba(255, 255, 255, 0.94);
+  --hover: #f1efe9;
+  --field: #fbfbf9;
+  --field-focus: #ffffff;
+  --radius: 4px;
+  --shadow: none;
+}
+
+/* 深色组合：选择器更具体，必须排在浅色预设之后 */
+:root[data-style='paper'][data-theme='dark'] {
+  --bg: #1a1714;
+  --surface: #221e1a;
+  --ink: #eae3d8;
+  --ink-2: #b3a99b;
+  --ink-3: #918878;
+  --line: #3a332c;
+  --accent: #e08a70;
+  --accent-soft: rgba(224, 138, 112, 0.16);
+  --info: #7fb0dd;
+  --warn: #d9a45c;
+  --danger: #e07a70;
+  --topbar: rgba(26, 23, 20, 0.92);
+  --hover: #2a251f;
+  --field: #26221d;
+  --field-focus: #2c2721;
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+:root[data-style='soft'][data-theme='dark'] {
+  --bg: #121614;
+  --surface: #1b211f;
+  --ink: #e8eeeb;
+  --ink-2: #a7b3ae;
+  --ink-3: #86928d;
+  --line: #2a322f;
+  --accent: #5cc7a8;
+  --accent-soft: rgba(92, 199, 168, 0.14);
+  --info: #7fb0dd;
+  --warn: #d9a45c;
+  --danger: #e07a70;
+  --topbar: rgba(18, 22, 20, 0.92);
+  --hover: #242c29;
+  --field: #1f2623;
+  --field-focus: #252d2a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-style='contrast'][data-theme='dark'] {
+  --bg: #0e0e0e;
+  --surface: #161616;
+  --ink: #f2f2f2;
+  --ink-2: #bdbdbd;
+  --ink-3: #9a9a9a;
+  --line: #3a3a3a;
+  --accent: #ff7a5c;
+  --accent-soft: rgba(255, 122, 92, 0.16);
+  --info: #7fb0dd;
+  --warn: #d9a45c;
+  --danger: #ff7a5c;
+  --topbar: rgba(14, 14, 14, 0.94);
+  --hover: #222222;
+  --field: #1b1b1b;
+  --field-focus: #202020;
+  --shadow: none;
+}
+
+/* 纸感风格：标题换成衬线，靠系统字体优雅降级 */
+:root[data-style='paper'] .brand h1,
+:root[data-style='paper'] .post-title,
+:root[data-style='paper'] .panel-title,
+:root[data-style='paper'] .admin-section-title,
+:root[data-style='paper'] .empty-title,
+:root[data-style='paper'] .item-sheet-title {
+  font-family: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+  letter-spacing: 0.01em;
+}
+
+/* 高对比风格：主卡片改用硬描边强化栏目感 */
+:root[data-style='contrast'] .post-item,
+:root[data-style='contrast'] .visitor-item,
+:root[data-style='contrast'] .panel-card {
+  border-width: 1.5px;
+  border-color: var(--ink);
+}
+
 /* 写作字号：由 main.js 写在 <html data-editor-size>，正文与纯代码源码同步 */
 :root[data-editor-size='small'] {
   --editor-font-size: 14px;
@@ -1301,6 +1443,85 @@ body {
 .field.half {
   flex: 1;
   min-width: 0;
+}
+
+/* 界面风格选择 */
+.style-picker {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 420px) {
+  .style-picker {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.style-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--field);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.style-option.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.style-swatches {
+  display: flex;
+  gap: 3px;
+}
+
+.style-swatches i {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* 自定义主题 */
+.custom-theme {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+
+.custom-theme .field {
+  margin-bottom: 0;
+}
+
+.custom-theme input[type='color'] {
+  height: 42px;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.custom-theme input[type='range'] {
+  padding: 0;
+  border: none;
+  background: transparent;
+  accent-color: var(--accent);
+}
+
+.custom-theme .settings-hint {
+  margin: 0;
 }
 
 .thumb-row {

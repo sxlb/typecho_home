@@ -142,6 +142,13 @@ const el = {
     mode: $('#set-editor-mode'),
     size: $('#set-editor-size'),
     theme: $('#set-theme'),
+    style: $('#set-style'),
+    custom: $('#custom-theme'),
+    accent: $('#set-accent'),
+    bg: $('#set-bg'),
+    surface: $('#set-surface'),
+    radius: $('#set-radius'),
+    radiusValue: $('#set-radius-value'),
     adminMode: $('#set-admin-mode'),
   },
 };
@@ -228,12 +235,25 @@ function resolveTheme(pref) {
  */
 function applyTheme(pref = getSettings().theme) {
   const theme = resolveTheme(pref);
+
   document.documentElement.dataset.theme = theme;
+
+  // 自定义风格下顶栏颜色跟随自定义背景，其余仍用内置深浅色
+  const customBg =
+    document.documentElement.dataset.style === 'custom' && theme === 'light'
+      ? normalizeHex(currentCustomTheme().bg, '#f6f5f2')
+      : null;
+
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', theme === 'dark' ? '#161514' : '#f6f5f2');
+    ?.setAttribute('content', customBg || (theme === 'dark' ? '#161514' : '#f6f5f2'));
   // Vditor 的配色不走 CSS 变量，需要单独同步
   applyEditorTheme(theme);
+
+  // 深浅切换后重新计算自定义主题（背景 / 卡片是否生效取决于模式）
+  if (document.documentElement.dataset.style === 'custom') {
+    applyCustomTheme(currentCustomTheme());
+  }
 }
 
 const EDITOR_FONT_SIZES = ['small', 'normal', 'large', 'xlarge'];
@@ -254,6 +274,94 @@ function applyFontSize(value = getSettings().editorFontSize) {
  */
 function applyAdminEntry() {
   el.adminEntry.hidden = (getSettings().adminMode || DEFAULT_SETTINGS.adminMode) !== 'on';
+}
+
+// ─── 界面风格 ────────────────────────────────────────────────────────────
+
+const STYLE_OPTIONS = ['classic', 'paper', 'soft', 'contrast', 'custom'];
+
+// 设置页里尚未保存的自定义配色，用于实时预览
+let customPreview = null;
+let styleSelection = DEFAULT_SETTINGS.style;
+
+function currentCustomTheme() {
+  return customPreview || getSettings().customTheme || DEFAULT_SETTINGS.customTheme;
+}
+
+/**
+ * 切换界面风格
+ *
+ * classic / paper / soft / contrast 由 CSS 变量接管；
+ * custom 把自定义配色写到 <html> 的行内变量上，优先级高于预设。
+ *
+ * @param {string} [value]
+ */
+function applyStyle(value = getSettings().style) {
+  const style = STYLE_OPTIONS.includes(value) ? value : DEFAULT_SETTINGS.style;
+
+  document.documentElement.dataset.style = style;
+  applyCustomTheme(style === 'custom' ? currentCustomTheme() : null);
+}
+
+/**
+ * 写入 / 清理自定义主题变量
+ *
+ * @param {{accent: string, bg: string, surface: string, radius: number}|null} custom
+ */
+function applyCustomTheme(custom) {
+  const root = document.documentElement;
+  const managed = ['--accent', '--accent-soft', '--bg', '--surface', '--topbar', '--radius'];
+
+  if (!custom) {
+    managed.forEach((prop) => root.style.removeProperty(prop));
+    return;
+  }
+
+  const accent = normalizeHex(custom.accent, DEFAULT_SETTINGS.customTheme.accent);
+  const bg = normalizeHex(custom.bg, DEFAULT_SETTINGS.customTheme.bg);
+  const surface = normalizeHex(custom.surface, DEFAULT_SETTINGS.customTheme.surface);
+  const radius = Math.min(20, Math.max(4, Number(custom.radius) || DEFAULT_SETTINGS.customTheme.radius));
+  const dark = document.documentElement.dataset.theme === 'dark';
+
+  root.style.setProperty('--accent', accent);
+  root.style.setProperty('--accent-soft', hexToRgba(accent, dark ? 0.18 : 0.14));
+  root.style.setProperty('--radius', `${radius}px`);
+
+  // 深色模式只换主色与圆角，浅色底会破坏深色可读性
+  if (dark) {
+    root.style.removeProperty('--bg');
+    root.style.removeProperty('--surface');
+    root.style.removeProperty('--topbar');
+  } else {
+    root.style.setProperty('--bg', bg);
+    root.style.setProperty('--surface', surface);
+    root.style.setProperty('--topbar', hexToRgba(bg, 0.94));
+  }
+}
+
+/** #rgb / #rrggbb → #rrggbb，非法值回退 */
+function normalizeHex(value, fallback) {
+  const text = String(value || '').trim().toLowerCase();
+
+  if (/^#[0-9a-f]{6}$/.test(text)) {
+    return text;
+  }
+
+  if (/^#[0-9a-f]{3}$/.test(text)) {
+    return `#${text[1]}${text[1]}${text[2]}${text[2]}${text[3]}${text[3]}`;
+  }
+
+  return fallback;
+}
+
+/** #rrggbb + 透明度 → rgba() */
+function hexToRgba(hex, alpha) {
+  const value = normalizeHex(hex, '#000000');
+
+  return `rgba(${parseInt(value.slice(1, 3), 16)}, ${parseInt(value.slice(3, 5), 16)}, ${parseInt(
+    value.slice(5, 7),
+    16
+  )}, ${alpha})`;
 }
 
 function formatDate(timestamp) {
@@ -3428,8 +3536,38 @@ function openSettings() {
   el.settings.size.value = settings.editorFontSize || DEFAULT_SETTINGS.editorFontSize;
   el.settings.theme.value = settings.theme || DEFAULT_SETTINGS.theme;
   el.settings.adminMode.value = settings.adminMode || DEFAULT_SETTINGS.adminMode;
+
+  styleSelection = settings.style || DEFAULT_SETTINGS.style;
+  customPreview = null;
+
+  const custom = { ...DEFAULT_SETTINGS.customTheme, ...(settings.customTheme || {}) };
+  el.settings.accent.value = custom.accent;
+  el.settings.bg.value = custom.bg;
+  el.settings.surface.value = custom.surface;
+  el.settings.radius.value = String(custom.radius);
+  el.settings.radiusValue.textContent = String(custom.radius);
+
+  syncStylePicker();
+  el.settings.custom.hidden = styleSelection !== 'custom';
+  applyStyle(styleSelection);
+
   renderVersion();
   show('settings');
+}
+
+function syncStylePicker() {
+  el.settings.style.querySelectorAll('[data-style]').forEach((button) => {
+    button.classList.toggle('active', button.dataset.style === styleSelection);
+  });
+}
+
+function readCustomForm() {
+  return {
+    accent: el.settings.accent.value,
+    bg: el.settings.bg.value,
+    surface: el.settings.surface.value,
+    radius: Number(el.settings.radius.value) || DEFAULT_SETTINGS.customTheme.radius,
+  };
 }
 
 function renderVersion() {
@@ -3463,8 +3601,11 @@ function saveSettingsFromForm() {
     editorMode: el.settings.mode.value || DEFAULT_SETTINGS.editorMode,
     editorFontSize: el.settings.size.value || DEFAULT_SETTINGS.editorFontSize,
     theme: el.settings.theme.value || DEFAULT_SETTINGS.theme,
+    style: styleSelection,
+    customTheme: readCustomForm(),
     adminMode: el.settings.adminMode.value || DEFAULT_SETTINGS.adminMode,
   });
+  applyStyle();
   applyTheme();
   applyFontSize();
   applyAdminEntry();
@@ -3819,6 +3960,35 @@ function bind() {
   el.settings.theme.addEventListener('change', () => applyTheme(el.settings.theme.value));
   el.settings.size.addEventListener('change', () => applyFontSize(el.settings.size.value));
 
+  // 界面风格：点一下立即换肤，保存或返回时落盘
+  el.settings.style.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-style]');
+
+    if (!button) {
+      return;
+    }
+
+    styleSelection = button.dataset.style;
+
+    if (styleSelection === 'custom' && !customPreview) {
+      customPreview = readCustomForm();
+    }
+
+    syncStylePicker();
+    el.settings.custom.hidden = styleSelection !== 'custom';
+    applyStyle(styleSelection);
+  });
+
+  el.settings.custom.addEventListener('input', () => {
+    if (styleSelection !== 'custom') {
+      return;
+    }
+
+    customPreview = readCustomForm();
+    el.settings.radiusValue.textContent = String(customPreview.radius);
+    applyCustomTheme(customPreview);
+  });
+
   // 发布检查清单：展开/收起，字段改动后自动重算
   el.check.toggle.addEventListener('click', () => setCheckOpen(!checkOpen));
   el.sheet.addEventListener('input', () => {
@@ -3907,6 +4077,8 @@ function bind() {
         show('admin');
       } else if (state.view === 'stats') {
         show('admin');
+      } else if (state.view === 'visitors') {
+        show('stats');
       } else if (state.view === 'settings') {
         isConfigured() ? show('list') : App.exitApp();
       } else {
@@ -3916,6 +4088,7 @@ function bind() {
   }
 }
 
+applyStyle();
 applyTheme();
 applyFontSize();
 applyAdminEntry();
