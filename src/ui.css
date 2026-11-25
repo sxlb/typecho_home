@@ -2594,6 +2594,46 @@ body.modal-open #view-editor .vditor-sv {
   margin-top: 12px;
 }
 
+/* ─── 媒体库选图 ───────────────────────────────────────── */
+
+.media-sheet-body {
+  padding: 4px 16px calc(22px + env(safe-area-inset-bottom));
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.media-cell {
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--hover);
+}
+
+.media-cell img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.media-cell:active {
+  opacity: 0.85;
+}
+
+.media-empty {
+  margin: 0;
+  padding: 30px 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  text-align: center;
+}
+
 /* ─── 深色模式补丁（写死的浅色值在这里兜底） ───────────── */
 
 :root[data-theme='dark'] .badge.draft {

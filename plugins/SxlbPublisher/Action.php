@@ -161,6 +161,9 @@ class Action extends Widget implements ActionInterface
                 case 'album':
                     $this->album();
                     break;
+                case 'media':
+                    $this->media();
+                    break;
                 case 'admin':
                     $this->admin($sub);
                     break;
@@ -661,6 +664,19 @@ class Action extends Widget implements ActionInterface
             Db::get(),
             max(1, $this->intParam('page', 1)),
             min(30, max(1, $this->intParam('size', 18)))
+        ));
+    }
+
+    /**
+     * 媒体库：编辑器选图用，只读且不需要管理开关
+     */
+    private function media()
+    {
+        $this->ok(Media::listing(
+            Db::get(),
+            max(1, $this->intParam('page', 1)),
+            min(50, max(1, $this->intParam('size', 24))),
+            $this->intParam('image', 0) === 1
         ));
     }
 

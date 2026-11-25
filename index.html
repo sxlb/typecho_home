@@ -847,6 +847,25 @@
       </div>
     </aside>
 
+    <!-- 媒体库选图 -->
+    <div class="sheet-mask" id="media-sheet-mask" hidden></div>
+    <aside class="sheet" id="media-sheet" hidden aria-hidden="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <span>媒体库</span>
+        <button class="icon-btn" id="media-close" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+      <div class="sheet-body media-sheet-body">
+        <div class="media-grid" id="media-grid"></div>
+        <p class="media-empty" id="media-empty" hidden>还没有上传过图片</p>
+        <button class="list-more" id="media-more" type="button" hidden>加载更多</button>
+      </div>
+    </aside>
+
     <!-- 主题元素输入弹窗 -->
     <div class="dialog" id="dialog" hidden>
       <div class="dialog-card">

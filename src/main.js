@@ -3697,6 +3697,7 @@ const OVERLAY_IDS = [
   'theme-sheet',
   'table-sheet',
   'snippet-sheet',
+  'media-sheet',
   'dialog',
 ];
 

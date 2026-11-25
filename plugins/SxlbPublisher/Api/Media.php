@@ -22,9 +22,10 @@ class Media
     /**
      * 附件列表
      *
+     * @param bool $imageOnly 只要图片，供编辑器「媒体库」选图使用
      * @return array{items: array, total: int, page: int, size: int}
      */
-    public static function listing(Db $db, int $page, int $size): array
+    public static function listing(Db $db, int $page, int $size, bool $imageOnly = false): array
     {
         $countQuery = $db->select(['COUNT(table.contents.cid)' => 'num'])
             ->from('table.contents')
@@ -35,6 +36,22 @@ class Media
             ->where('table.contents.type = ?', 'attachment')
             ->order('table.contents.created', Db::SORT_DESC)
             ->page($page, $size);
+
+        // 扩展名存在 text 的 JSON 里，用 LIKE 白名单匹配，跨 MySQL / SQLite 都安全
+        if ($imageOnly) {
+            $types = ['jpg', 'jpeg', 'gif', 'png', 'tiff', 'bmp', 'webp', 'avif'];
+            $parts = [];
+            $params = [];
+
+            foreach ($types as $type) {
+                $parts[] = 'table.contents.text LIKE ?';
+                $params[] = '%"type":"' . $type . '"%';
+            }
+
+            $condition = '(' . implode(' OR ', $parts) . ')';
+            $countQuery->where($condition, ...$params);
+            $rowsQuery->where($condition, ...$params);
+        }
 
         $total = (int) $db->fetchObject($countQuery)->num;
         $items = [];

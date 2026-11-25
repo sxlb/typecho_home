@@ -1,6 +1,6 @@
 import Vditor from 'vditor';
 import 'vditor/dist/index.css';
-import { uploadImage } from './api.js';
+import { uploadImage, call } from './api.js';
 import { listSnippets, addSnippet, removeSnippet } from './local.js';
 
 let vditor = null;
@@ -547,8 +547,9 @@ export function closeEditorSheets() {
   const theme = closeSheet('theme-sheet', 'theme-mask');
   const table = closeSheet('table-sheet', 'table-mask');
   const snippet = closeSheet('snippet-sheet', 'snippet-mask');
+  const media = closeSheet('media-sheet', 'media-sheet-mask');
 
-  return theme || table || snippet;
+  return theme || table || snippet || media;
 }
 
 /* ─── 编辑模式即时切换（即时渲染 / 所见即所得 / 分屏预览 / 纯代码） ── */
@@ -1186,6 +1187,9 @@ const EYE_ICON =
 const FIND_ICON =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" style="fill:none;stroke-width:1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.3"/><path d="M15.8 15.8L21 21"/></svg>';
 
+const MEDIA_ICON =
+  '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" style="fill:none;stroke-width:1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="9.5" r="1.6"/><path d="M4.5 17l4.8-4.4 3.2 2.9 3-2.6 4 3.6"/></svg>';
+
 /* ─── 片段库（常用开头、声明、SEO 描述等，只存本机） ────── */
 
 let snippetSheetReady = false;
@@ -1310,6 +1314,160 @@ function openSnippetSheet() {
   openSheet('snippet-sheet', 'snippet-mask');
 }
 
+/* ─── 媒体库（插入已上传图片，避免重复上传） ─────────────── */
+
+const MEDIA_PAGE_SIZE = 24;
+
+const mediaState = {
+  items: [],
+  page: 1,
+  hasMore: true,
+  loading: false,
+  seq: 0,
+  ready: false,
+};
+
+function ensureMediaSheet() {
+  if (mediaState.ready) {
+    return;
+  }
+
+  document.getElementById('media-close')?.addEventListener('click', closeMediaSheet);
+  document.getElementById('media-sheet-mask')?.addEventListener('click', closeMediaSheet);
+  document.getElementById('media-more')?.addEventListener('click', () => {
+    mediaState.page += 1;
+    loadMedia(false);
+  });
+
+  mediaState.ready = true;
+}
+
+function closeMediaSheet() {
+  closeSheet('media-sheet', 'media-sheet-mask');
+}
+
+function updateMediaMore() {
+  const more = document.getElementById('media-more');
+
+  if (!more) {
+    return;
+  }
+
+  more.hidden = !mediaState.hasMore || mediaState.loading;
+  more.textContent = mediaState.loading ? '加载中…' : '加载更多';
+  more.disabled = mediaState.loading;
+}
+
+function renderMedia() {
+  const grid = document.getElementById('media-grid');
+  const empty = document.getElementById('media-empty');
+
+  if (!grid) {
+    return;
+  }
+
+  grid.innerHTML = '';
+  empty.hidden = mediaState.items.length > 0;
+  updateMediaMore();
+
+  mediaState.items.forEach((item) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'media-cell';
+    button.setAttribute('aria-label', `插入 ${item.name || '图片'}`);
+
+    const image = document.createElement('img');
+    image.src = item.url;
+    image.alt = '';
+    image.loading = 'lazy';
+
+    button.appendChild(image);
+    button.addEventListener('click', () => {
+      closeMediaSheet();
+      insert(`![](${item.url})`);
+    });
+
+    grid.appendChild(button);
+  });
+}
+
+async function loadMedia(reset = true) {
+  if (mediaState.loading) {
+    return;
+  }
+
+  if (reset) {
+    mediaState.page = 1;
+    mediaState.hasMore = true;
+  }
+
+  if (!mediaState.hasMore) {
+    return;
+  }
+
+  const seq = (mediaState.seq += 1);
+  mediaState.loading = true;
+  updateMediaMore();
+
+  if (reset) {
+    // 重新加载期间先不显示「还没有图片」，避免误导
+    const empty = document.getElementById('media-empty');
+
+    if (empty) {
+      empty.hidden = true;
+    }
+  }
+
+  try {
+    const data = await call('media', {
+      query: { page: mediaState.page, size: MEDIA_PAGE_SIZE, image: 1 },
+    });
+
+    if (seq !== mediaState.seq) {
+      return;
+    }
+
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const exists = new Set(mediaState.items.map((item) => item.cid));
+
+    mediaState.items = reset
+      ? items
+      : mediaState.items.concat(items.filter((item) => !exists.has(item.cid)));
+    mediaState.hasMore =
+      typeof data?.total === 'number'
+        ? mediaState.items.length < data.total
+        : items.length >= MEDIA_PAGE_SIZE;
+
+    renderMedia();
+  } catch (error) {
+    if (seq === mediaState.seq) {
+      errorHandler?.(error.message);
+
+      if (reset) {
+        mediaState.items = [];
+        renderMedia();
+      } else {
+        mediaState.page = Math.max(1, mediaState.page - 1);
+        mediaState.hasMore = true;
+      }
+    }
+  } finally {
+    if (seq === mediaState.seq) {
+      mediaState.loading = false;
+      updateMediaMore();
+    }
+  }
+}
+
+function openMediaSheet() {
+  ensureMediaSheet();
+  openSheet('media-sheet', 'media-sheet-mask');
+  renderMedia();
+
+  // 每次打开都重拉第一页，刚在管理页上传的图也能马上选到
+  loadMedia(true);
+}
+
 /* ─── 编辑器 ────────────────────────────────────────────── */
 
 /**
@@ -1361,6 +1519,7 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onMo
       { name: 'tableops', tip: '表格操作', icon: TABLE_ICON, click: openTableSheet },
       { name: 'upload', tip: '上传图片' },
       { name: 'camera', tip: '拍照', icon: CAMERA_ICON, click: openCamera },
+      { name: 'media', tip: '媒体库', icon: MEDIA_ICON, click: openMediaSheet },
       { name: 'theme', tip: '主题元素', icon: THEME_ICON, click: openThemeSheet },
       { name: 'snippets', tip: '片段库', icon: SNIPPET_ICON, click: openSnippetSheet },
       { name: 'findreplace', tip: '查找替换', icon: FIND_ICON, click: openFindReplace },
