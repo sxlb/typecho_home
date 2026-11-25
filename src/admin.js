@@ -50,12 +50,16 @@ let toast = () => {};
 let onOpenPages = () => {};
 let onOpenLinks = () => {};
 let onOpenStats = () => {};
+let onOpenCalendar = () => {};
 
 export function initAdmin(options = {}) {
   toast = typeof options.onToast === 'function' ? options.onToast : toast;
   onOpenPages = typeof options.onOpenPages === 'function' ? options.onOpenPages : onOpenPages;
   onOpenLinks = typeof options.onOpenLinks === 'function' ? options.onOpenLinks : onOpenLinks;
   onOpenStats = typeof options.onOpenStats === 'function' ? options.onOpenStats : onOpenStats;
+  onOpenCalendar = typeof options.onOpenCalendar === 'function'
+    ? options.onOpenCalendar
+    : onOpenCalendar;
 
   $('#btn-admin-refresh').addEventListener('click', () => load());
   $('#btn-admin-retry').addEventListener('click', () => load());
@@ -355,6 +359,11 @@ function renderContent() {
       title: '友情链接',
       description: '增删改友链、设置显示位置与排序',
     },
+    {
+      key: 'calendar',
+      title: '发布日历',
+      description: '按月查看已发布、定时与草稿',
+    },
   ];
 
   el.content.innerHTML = '';
@@ -393,6 +402,11 @@ function renderContent() {
 
       if (entry.key === 'links') {
         onOpenLinks();
+        return;
+      }
+
+      if (entry.key === 'calendar') {
+        onOpenCalendar();
         return;
       }
 
@@ -1154,6 +1168,73 @@ function renderMedia(item) {
   actions.appendChild(toolButton('复制链接', 'ghost', async () => {
     const ok = await copyText(item.url || '');
     toast(ok ? '链接已复制' : '复制失败，请长按图片保存');
+  }));
+
+  // 重命名：只改展示名，磁盘文件名与已插入正文的链接都不受影响
+  let renaming = false;
+  actions.appendChild(toolButton('重命名', 'ghost', () => {
+    if (renaming) {
+      return;
+    }
+
+    renaming = true;
+
+    const box = document.createElement('div');
+    box.className = 'media-rename';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 120;
+    input.value = item.name || item.title || '';
+
+    const buttons = document.createElement('div');
+    buttons.className = 'media-rename-actions';
+
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.className = 'btn ghost small';
+    cancel.textContent = '取消';
+
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn primary small';
+    save.textContent = '保存';
+
+    buttons.append(cancel, save);
+    box.append(input, buttons);
+    info.appendChild(box);
+    input.focus();
+    input.select();
+
+    cancel.addEventListener('click', () => {
+      box.remove();
+      renaming = false;
+    });
+
+    save.addEventListener('click', async () => {
+      const value = input.value.trim();
+
+      if (!value) {
+        toast('名称不能为空');
+        return;
+      }
+
+      save.disabled = true;
+      save.textContent = '保存中…';
+
+      try {
+        await callAdmin('mediaRename', { method: 'POST', body: { cid: item.cid, name: value } });
+        item.name = value;
+        title.textContent = value;
+        box.remove();
+        renaming = false;
+        toast('已重命名');
+      } catch (error) {
+        toast(error.message);
+        save.disabled = false;
+        save.textContent = '保存';
+      }
+    });
   }));
 
   const remove = toolButton('删除', 'ghost');

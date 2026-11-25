@@ -7,6 +7,7 @@ use Typecho\Db;
 use Typecho\Widget;
 use TypechoPlugin\SxlbPublisher\Api\Admin;
 use TypechoPlugin\SxlbPublisher\Api\Album;
+use TypechoPlugin\SxlbPublisher\Api\Calendar;
 use TypechoPlugin\SxlbPublisher\Api\Comment;
 use TypechoPlugin\SxlbPublisher\Api\Links;
 use TypechoPlugin\SxlbPublisher\Api\Media;
@@ -163,6 +164,9 @@ class Action extends Widget implements ActionInterface
                     break;
                 case 'media':
                     $this->media();
+                    break;
+                case 'calendar':
+                    $this->calendar();
                     break;
                 case 'admin':
                     $this->admin($sub);
@@ -680,6 +684,14 @@ class Action extends Widget implements ActionInterface
         ));
     }
 
+    /**
+     * 发布日历：按月返回文章与按天汇总
+     */
+    private function calendar()
+    {
+        $this->ok(Calendar::month(Db::get(), (string) $this->param('month', '')));
+    }
+
     // ─── 管理接口 ──────────────────────────────────────────────────────────
 
     /**
@@ -819,6 +831,14 @@ class Action extends Widget implements ActionInterface
             case 'mediaDelete':
                 $this->requirePost($sub);
                 $this->ok(Media::delete(Db::get(), $this->intParam('cid')));
+                break;
+            case 'mediaRename':
+                $this->requirePost($sub);
+                $this->ok(Media::rename(
+                    Db::get(),
+                    $this->intParam('cid'),
+                    (string) $this->param('name', '')
+                ));
                 break;
             case 'metaSave':
                 $this->requirePost($sub);

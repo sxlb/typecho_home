@@ -213,6 +213,41 @@
         </main>
       </section>
 
+      <!-- 发布日历 -->
+      <section id="view-calendar" class="view" hidden>
+        <header class="topbar">
+          <button class="text-btn" id="btn-calendar-back">返回</button>
+          <span class="editor-status">发布日历</span>
+          <div class="topbar-actions">
+            <button class="icon-btn" id="btn-calendar-refresh" aria-label="刷新">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 11a8 8 0 1 0-2.3 6.3" />
+                <path d="M20 5v6h-6" />
+              </svg>
+            </button>
+          </div>
+        </header>
+        <main class="list-body" id="calendar-body">
+          <div class="calendar-head">
+            <button class="icon-btn" id="calendar-prev" aria-label="上个月">‹</button>
+            <span class="calendar-title" id="calendar-title"></span>
+            <button class="icon-btn" id="calendar-next" aria-label="下个月">›</button>
+          </div>
+          <div class="calendar-week">
+            <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+          </div>
+          <div class="calendar-grid" id="calendar-grid"></div>
+          <p class="calendar-legend">
+            <span class="dot publish"></span>已发布
+            <span class="dot scheduled"></span>定时
+            <span class="dot draft"></span>草稿
+          </p>
+          <h2 class="admin-section-title" id="calendar-day-title"></h2>
+          <div id="calendar-items"></div>
+          <p class="list-loading" id="calendar-loading" hidden>加载中…</p>
+        </main>
+      </section>
+
       <!-- 独立页面 -->
       <section id="view-pages" class="view" hidden>
         <header class="topbar">
@@ -853,16 +888,23 @@
       <div class="sheet-handle"></div>
       <div class="sheet-head">
         <span>媒体库</span>
-        <button class="icon-btn" id="media-close" aria-label="关闭">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <path d="M6 6l12 12M18 6L6 18" />
-          </svg>
-        </button>
+        <div class="media-head-actions">
+          <button class="text-btn accent" id="media-select" type="button">多选</button>
+          <button class="icon-btn" id="media-close" aria-label="关闭">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
       </div>
       <div class="sheet-body media-sheet-body">
         <div class="media-grid" id="media-grid"></div>
         <p class="media-empty" id="media-empty" hidden>还没有上传过图片</p>
         <button class="list-more" id="media-more" type="button" hidden>加载更多</button>
+      </div>
+      <div class="media-actions" id="media-actions" hidden>
+        <span class="media-count" id="media-count">已选 0 张</span>
+        <button class="btn primary small" id="media-insert" type="button">插入</button>
       </div>
     </aside>
 

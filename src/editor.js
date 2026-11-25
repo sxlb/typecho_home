@@ -1325,6 +1325,9 @@ const mediaState = {
   loading: false,
   seq: 0,
   ready: false,
+  // 多选模式：批量插入多张图
+  selecting: false,
+  selected: new Set(),
 };
 
 function ensureMediaSheet() {
@@ -1334,6 +1337,8 @@ function ensureMediaSheet() {
 
   document.getElementById('media-close')?.addEventListener('click', closeMediaSheet);
   document.getElementById('media-sheet-mask')?.addEventListener('click', closeMediaSheet);
+  document.getElementById('media-select')?.addEventListener('click', toggleMediaSelect);
+  document.getElementById('media-insert')?.addEventListener('click', insertSelectedMedia);
   document.getElementById('media-more')?.addEventListener('click', () => {
     mediaState.page += 1;
     loadMedia(false);
@@ -1344,6 +1349,67 @@ function ensureMediaSheet() {
 
 function closeMediaSheet() {
   closeSheet('media-sheet', 'media-sheet-mask');
+  resetMediaSelect();
+}
+
+function resetMediaSelect() {
+  mediaState.selecting = false;
+  mediaState.selected.clear();
+
+  const button = document.getElementById('media-select');
+
+  if (button) {
+    button.textContent = '多选';
+  }
+
+  updateMediaActions();
+}
+
+function toggleMediaSelect() {
+  mediaState.selecting = !mediaState.selecting;
+  mediaState.selected.clear();
+
+  const button = document.getElementById('media-select');
+
+  if (button) {
+    button.textContent = mediaState.selecting ? '取消多选' : '多选';
+  }
+
+  updateMediaActions();
+  renderMedia();
+}
+
+function updateMediaActions() {
+  const bar = document.getElementById('media-actions');
+  const count = document.getElementById('media-count');
+  const insertButton = document.getElementById('media-insert');
+
+  if (!bar) {
+    return;
+  }
+
+  bar.hidden = !mediaState.selecting;
+
+  if (count) {
+    count.textContent = `已选 ${mediaState.selected.size} 张`;
+  }
+
+  if (insertButton) {
+    insertButton.disabled = mediaState.selected.size === 0;
+  }
+}
+
+function insertSelectedMedia() {
+  const urls = mediaState.items
+    .filter((item) => mediaState.selected.has(item.cid))
+    .map((item) => item.url);
+
+  if (!urls.length) {
+    return;
+  }
+
+  closeMediaSheet();
+  insert(urls.map((url) => `![](${url})`).join('\n\n'));
 }
 
 function updateMediaMore() {
@@ -1361,14 +1427,19 @@ function updateMediaMore() {
 function renderMedia() {
   const grid = document.getElementById('media-grid');
   const empty = document.getElementById('media-empty');
+  const body = document.querySelector('.media-sheet-body');
 
   if (!grid) {
     return;
   }
 
+  // 重建列表后恢复滚动位置，多选切换时不会跳回顶部
+  const scroll = body ? body.scrollTop : 0;
+
   grid.innerHTML = '';
   empty.hidden = mediaState.items.length > 0;
   updateMediaMore();
+  updateMediaActions();
 
   mediaState.items.forEach((item) => {
     const button = document.createElement('button');
@@ -1382,13 +1453,41 @@ function renderMedia() {
     image.loading = 'lazy';
 
     button.appendChild(image);
+
+    if (mediaState.selecting) {
+      const badge = document.createElement('span');
+      badge.className = 'media-badge';
+
+      if (mediaState.selected.has(item.cid)) {
+        button.classList.add('selected');
+        badge.textContent = String([...mediaState.selected].indexOf(item.cid) + 1);
+      }
+
+      button.appendChild(badge);
+    }
+
     button.addEventListener('click', () => {
+      if (mediaState.selecting) {
+        if (mediaState.selected.has(item.cid)) {
+          mediaState.selected.delete(item.cid);
+        } else {
+          mediaState.selected.add(item.cid);
+        }
+
+        renderMedia();
+        return;
+      }
+
       closeMediaSheet();
       insert(`![](${item.url})`);
     });
 
     grid.appendChild(button);
   });
+
+  if (body) {
+    body.scrollTop = scroll;
+  }
 }
 
 async function loadMedia(reset = true) {
@@ -1461,6 +1560,7 @@ async function loadMedia(reset = true) {
 
 function openMediaSheet() {
   ensureMediaSheet();
+  resetMediaSelect();
   openSheet('media-sheet', 'media-sheet-mask');
   renderMedia();
 

@@ -34,6 +34,7 @@ const el = {
     admin: $('#view-admin'),
     shuoshuo: $('#view-shuoshuo'),
     album: $('#view-album'),
+    calendar: $('#view-calendar'),
     pages: $('#view-pages'),
     links: $('#view-links'),
     stats: $('#view-stats'),
@@ -100,6 +101,11 @@ const el = {
   albumViewerTrack: $('#album-viewer-track'),
   albumViewerCount: $('#album-viewer-count'),
   albumViewerCaption: $('#album-viewer-caption'),
+  calendarTitle: $('#calendar-title'),
+  calendarGrid: $('#calendar-grid'),
+  calendarDayTitle: $('#calendar-day-title'),
+  calendarItems: $('#calendar-items'),
+  calendarLoading: $('#calendar-loading'),
   pagesLoading: $('#pages-loading'),
   pagesEmpty: $('#pages-empty'),
   pagesItems: $('#pages-items'),
@@ -182,8 +188,8 @@ const state = {
   pageMeta: null,
   // 页面列表的来源视图，返回时回到管理页或首页
   pagesFrom: 'list',
-  // 从相册进入的文章编辑器，返回时回到相册
-  albumEditing: false,
+  // 从相册 / 日历进入的文章编辑器，返回时回到来源视图（'' 表示首页列表）
+  returnView: '',
   // 当前编辑的文章是否属于相册分类（决定「相册描述」字段是否显示）
   imagePost: false,
   status: 'draft',
@@ -1467,11 +1473,18 @@ function backToList() {
     return;
   }
 
-  // 从相册进入的编辑，保存或返回后回相册并刷新，避免跳到首页
-  if (state.albumEditing) {
-    state.albumEditing = false;
+  // 从相册 / 日历进入的编辑，保存或返回后回来源视图，避免跳到首页
+  if (state.returnView === 'album') {
+    state.returnView = '';
     show('album');
     loadAlbum({ reset: true });
+    return;
+  }
+
+  if (state.returnView === 'calendar') {
+    state.returnView = '';
+    show('calendar');
+    loadCalendar();
     return;
   }
 
@@ -2156,12 +2169,12 @@ async function editAlbumPost() {
   }
 
   closeAlbumViewer();
-  state.albumEditing = true;
+  state.returnView = 'album';
   await openPost(item.cid);
 
   // 打开失败时 openPost 内部只 toast，这里清掉标记，避免下次返回误跳相册
   if (state.view !== 'editor') {
-    state.albumEditing = false;
+    state.returnView = '';
   }
 }
 
@@ -2379,6 +2392,198 @@ async function submitAlbum(isDraft) {
     button.disabled = false;
     button.textContent = isDraft ? '存草稿' : '发布';
   }
+}
+
+// ─── 发布日历 ────────────────────────────────────────────────────────────
+
+const calendar = {
+  month: '',
+  days: {},
+  items: [],
+  selected: '',
+  loading: false,
+  seq: 0,
+};
+
+function monthKey(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function dateKey(date) {
+  return `${monthKey(date)}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function openCalendar() {
+  if (!isConfigured()) {
+    openSettings();
+    return;
+  }
+
+  const now = new Date();
+  calendar.month = monthKey(now);
+  calendar.selected = dateKey(now);
+  show('calendar');
+  loadCalendar();
+}
+
+async function loadCalendar() {
+  const seq = (calendar.seq += 1);
+  calendar.loading = true;
+  el.calendarLoading.hidden = false;
+
+  try {
+    const data = await call('calendar', { query: { month: calendar.month } });
+
+    if (seq !== calendar.seq) {
+      return;
+    }
+
+    calendar.month = String(data?.month || calendar.month);
+    calendar.days = data?.days || {};
+    calendar.items = Array.isArray(data?.items) ? data.items : [];
+
+    renderCalendar();
+  } catch (error) {
+    if (seq !== calendar.seq) {
+      return;
+    }
+
+    toast(error.message);
+  } finally {
+    if (seq === calendar.seq) {
+      calendar.loading = false;
+      el.calendarLoading.hidden = true;
+    }
+  }
+}
+
+function shiftCalendarMonth(delta) {
+  const [year, mon] = calendar.month.split('-').map(Number);
+  const next = new Date(year, mon - 1 + delta, 1);
+
+  calendar.month = monthKey(next);
+  calendar.selected = '';
+  loadCalendar();
+}
+
+function renderCalendar() {
+  const [year, mon] = calendar.month.split('-').map(Number);
+  el.calendarTitle.textContent = `${year} 年 ${mon} 月`;
+
+  const first = new Date(year, mon - 1, 1);
+  // 周一为一周起点：getDay() 周日是 0，要排到第 6 格
+  const offset = (first.getDay() + 6) % 7;
+  const daysInMonth = new Date(year, mon, 0).getDate();
+  const today = dateKey(new Date());
+
+  el.calendarGrid.innerHTML = '';
+
+  for (let i = 0; i < offset; i += 1) {
+    const blank = document.createElement('span');
+    blank.className = 'calendar-blank';
+    el.calendarGrid.appendChild(blank);
+  }
+
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const key = `${calendar.month}-${String(day).padStart(2, '0')}`;
+    const stat = calendar.days[key] || {};
+    const total =
+      Number(stat.publish || 0) + Number(stat.scheduled || 0) + Number(stat.draft || 0);
+
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'calendar-day';
+    cell.classList.toggle('today', key === today);
+    cell.classList.toggle('active', key === calendar.selected);
+
+    const number = document.createElement('span');
+    number.className = 'calendar-day-num';
+    number.textContent = String(day);
+
+    const dots = document.createElement('span');
+    dots.className = 'calendar-dots';
+
+    ['publish', 'scheduled', 'draft'].forEach((type) => {
+      if (Number(stat[type] || 0) > 0) {
+        const dot = document.createElement('i');
+        dot.className = `dot ${type}`;
+        dots.appendChild(dot);
+      }
+    });
+
+    cell.append(number, dots);
+
+    if (total > 0) {
+      cell.title = `${total} 篇`;
+    }
+
+    cell.addEventListener('click', () => {
+      calendar.selected = key;
+      renderCalendar();
+    });
+
+    el.calendarGrid.appendChild(cell);
+  }
+
+  renderCalendarDay();
+}
+
+function renderCalendarDay() {
+  el.calendarItems.innerHTML = '';
+
+  if (!calendar.selected) {
+    el.calendarDayTitle.textContent = '选择一天查看';
+    return;
+  }
+
+  const [year, mon, day] = calendar.selected.split('-').map(Number);
+  el.calendarDayTitle.textContent = `${mon} 月 ${day} 日的文章`;
+
+  const items = calendar.items.filter((item) => item.day === calendar.selected);
+
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'calendar-empty';
+    empty.textContent = '这一天没有发布或排期';
+    el.calendarItems.appendChild(empty);
+    return;
+  }
+
+  items.forEach((item) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'calendar-item';
+
+    const time = document.createElement('span');
+    time.className = 'calendar-item-time';
+    time.textContent = formatClock(item.created);
+
+    const title = document.createElement('span');
+    title.className = 'calendar-item-title';
+    title.textContent = item.title || '未命名文档';
+
+    const badge = document.createElement('span');
+    badge.className = `badge${item.status === 'draft' ? ' draft' : item.status === 'scheduled' ? ' scheduled' : ''}`;
+    badge.textContent = item.status === 'draft' ? '草稿' : item.status === 'scheduled' ? '定时' : '已发布';
+
+    row.append(time, title, badge);
+    row.addEventListener('click', () => {
+      state.returnView = 'calendar';
+      openPost(item.cid).then(() => {
+        if (state.view !== 'editor') {
+          state.returnView = '';
+        }
+      });
+    });
+
+    el.calendarItems.appendChild(row);
+  });
+}
+
+function formatClock(timestamp) {
+  const date = new Date(timestamp * 1000);
+
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
 // ─── 独立页面 ────────────────────────────────────────────────────────────
@@ -4017,12 +4222,19 @@ async function submit(isDraft) {
     destroyEditor();
     state.draftKey = '';
 
-    // 从相册进入的编辑，保存后回相册并刷新，而不是跳回首页列表
-    if (state.albumEditing) {
-      state.albumEditing = false;
-      show('album');
-      await loadAlbum({ reset: true });
-      $('#album-body').scrollTop = 0;
+    // 从相册 / 日历进入的编辑，保存后回来源视图并刷新，而不是跳回首页列表
+    if (state.returnView) {
+      const view = state.returnView;
+      state.returnView = '';
+
+      if (view === 'album') {
+        show('album');
+        await loadAlbum({ reset: true });
+        $('#album-body').scrollTop = 0;
+      } else {
+        show('calendar');
+        await loadCalendar();
+      }
     } else {
       show('list');
       await loadPosts();
@@ -4438,6 +4650,10 @@ function bind() {
     loadStats();
   });
   $('#btn-visitors').addEventListener('click', openVisitors);
+  $('#btn-calendar-back').addEventListener('click', () => show('admin'));
+  $('#btn-calendar-refresh').addEventListener('click', loadCalendar);
+  $('#calendar-prev').addEventListener('click', () => shiftCalendarMonth(-1));
+  $('#calendar-next').addEventListener('click', () => shiftCalendarMonth(1));
   $('#btn-visitors-back').addEventListener('click', () => show('stats'));
   $('#btn-visitors-refresh').addEventListener('click', () => loadVisitors(true));
   el.visitorsRange.addEventListener('click', (event) => {
@@ -4707,6 +4923,8 @@ function bind() {
         show('admin');
       } else if (state.view === 'visitors') {
         show('stats');
+      } else if (state.view === 'calendar') {
+        show('admin');
       } else if (state.view === 'settings') {
         isConfigured() ? show('list') : App.exitApp();
       } else {
@@ -4734,6 +4952,7 @@ initAdmin({
   onOpenPages: () => openPages('admin'),
   onOpenLinks: openLinks,
   onOpenStats: openStats,
+  onOpenCalendar: openCalendar,
 });
 bind();
 

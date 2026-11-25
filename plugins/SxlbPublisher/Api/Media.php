@@ -123,4 +123,46 @@ class Media
 
         return ['cid' => $cid, 'deleted' => true];
     }
+
+    /**
+     * 重命名附件（只改展示名，磁盘文件名保持不变，避免已插入正文的链接失效）
+     *
+     * @return array{cid:int,name:string}
+     */
+    public static function rename(Db $db, int $cid, string $name): array
+    {
+        $name = trim($name);
+
+        if ($name === '') {
+            throw new \RuntimeException('名称不能为空');
+        }
+
+        if (mb_strlen($name) > 120) {
+            throw new \RuntimeException('名称最多 120 字');
+        }
+
+        $row = $db->fetchRow(
+            $db->select('cid', 'text')->from('table.contents')
+                ->where('cid = ?', $cid)->where('type = ?', 'attachment')->limit(1)
+        );
+
+        if (!$row) {
+            throw new \RuntimeException('文件不存在');
+        }
+
+        $data = json_decode((string) $row['text'], true);
+
+        if (!is_array($data)) {
+            $data = [];
+        }
+
+        $data['name'] = $name;
+
+        $db->query($db->update('table.contents')->rows([
+            'title' => $name,
+            'text' => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ])->where('cid = ?', $cid));
+
+        return ['cid' => $cid, 'name' => $name];
+    }
 }
