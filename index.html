@@ -256,7 +256,10 @@
             <div class="stats-grid" id="stats-grid"></div>
 
             <section class="panel-card">
-              <h2 class="panel-title">访问统计</h2>
+              <div class="panel-head">
+                <h2 class="panel-title">访问统计</h2>
+                <button class="panel-link" id="btn-visitors" type="button">访客明细 ›</button>
+              </div>
               <div class="visit-metrics" id="stats-visit-metrics"></div>
               <div class="chart" id="stats-visit-chart"></div>
               <div class="chart-legend" id="stats-visit-legend" hidden>
@@ -280,6 +283,40 @@
               <div class="cat-list" id="stats-categories"></div>
             </section>
           </div>
+        </main>
+      </section>
+
+      <!-- 访客明细 -->
+      <section id="view-visitors" class="view" hidden>
+        <header class="topbar">
+          <button class="text-btn" id="btn-visitors-back">返回</button>
+          <span class="editor-status">访客明细</span>
+          <div class="topbar-actions">
+            <button class="icon-btn" id="btn-visitors-refresh" aria-label="刷新">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 11a8 8 0 1 0-2.3 6.3" />
+                <path d="M20 5v6h-6" />
+              </svg>
+            </button>
+          </div>
+        </header>
+        <div class="list-tools">
+          <div class="chips filters" id="visitors-range">
+            <button class="chip active" type="button" data-range="today">今天</button>
+            <button class="chip" type="button" data-range="yesterday">昨天</button>
+            <button class="chip" type="button" data-range="7d">近 7 天</button>
+            <button class="chip" type="button" data-range="30d">近 30 天</button>
+          </div>
+          <p class="visitor-summary" id="visitors-summary"></p>
+        </div>
+        <main class="list-body" id="visitors-body">
+          <div class="list-loading" id="visitors-loading">加载中…</div>
+          <div class="empty" id="visitors-empty" hidden>
+            <p class="empty-title">这段时间还没有访问</p>
+            <p class="empty-desc">换个时间范围看看</p>
+          </div>
+          <div id="visitors-items"></div>
+          <button class="list-more" id="visitors-more" type="button" hidden>加载更多</button>
         </main>
       </section>
 

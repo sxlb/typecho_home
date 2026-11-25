@@ -154,6 +154,9 @@ class Action extends Widget implements ActionInterface
                 case 'stats':
                     $this->stats();
                     break;
+                case 'visitors':
+                    $this->visitors();
+                    break;
                 case 'admin':
                     $this->admin($sub);
                     break;
@@ -629,6 +632,20 @@ class Action extends Widget implements ActionInterface
     private function stats()
     {
         $this->ok(Stats::dashboard(Db::get(), $this->intParam('days', 14)));
+    }
+
+    /**
+     * 访客明细
+     *
+     * 只读接口，range 支持 today / yesterday / 7d / 30d，按页返回访问记录。
+     */
+    private function visitors()
+    {
+        $this->ok(Stats::visitors(
+            Db::get(),
+            (string) $this->param('range', 'today'),
+            $this->intParam('page', 1)
+        ));
     }
 
     // ─── 管理接口 ──────────────────────────────────────────────────────────

@@ -892,6 +892,101 @@ body {
   font-size: 13px;
 }
 
+/* 面板标题行：标题 + 右侧入口 */
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.panel-head .panel-title {
+  margin: 0;
+}
+
+.panel-link {
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 访客明细 */
+.visitor-summary {
+  margin: 2px 0 0;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.visitor-item {
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.visitor-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.visitor-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visitor-time {
+  flex: 0 0 auto;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.visitor-path {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visitor-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 8px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.visitor-ip {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.visitor-referrer {
+  margin: 6px 0 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 访问统计 */
 
 .visit-metrics {

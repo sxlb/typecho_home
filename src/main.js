@@ -36,6 +36,7 @@ const el = {
     pages: $('#view-pages'),
     links: $('#view-links'),
     stats: $('#view-stats'),
+    visitors: $('#view-visitors'),
     editor: $('#view-editor'),
     settings: $('#view-settings'),
   },
@@ -117,6 +118,12 @@ const el = {
   statsVisitChart: $('#stats-visit-chart'),
   statsVisitLegend: $('#stats-visit-legend'),
   statsVisitPages: $('#stats-visit-pages'),
+  visitorsRange: $('#visitors-range'),
+  visitorsSummary: $('#visitors-summary'),
+  visitorsLoading: $('#visitors-loading'),
+  visitorsEmpty: $('#visitors-empty'),
+  visitorsItems: $('#visitors-items'),
+  visitorsMore: $('#visitors-more'),
   preview: $('#btn-preview'),
   dialog: $('#dialog'),
   appVersion: $('#app-version'),
@@ -2708,6 +2715,288 @@ function renderStatsCategories(categories) {
   });
 }
 
+// ─── 访客明细 ────────────────────────────────────────────────────────────
+
+const VISITOR_PAGE_SIZE = 30;
+
+const visitors = {
+  seq: 0,
+  range: 'today',
+  page: 1,
+  hasMore: true,
+  loading: false,
+  items: [],
+  total: 0,
+  uv: 0,
+};
+
+function openVisitors() {
+  if (!isConfigured()) {
+    openSettings();
+    return;
+  }
+
+  show('visitors');
+  loadVisitors(true);
+}
+
+/**
+ * 拉取访客记录
+ *
+ * @param {boolean} reset 切换时间范围或刷新时从第一页重新拉
+ */
+async function loadVisitors(reset = false) {
+  if (reset) {
+    visitors.page = 1;
+    visitors.hasMore = true;
+    visitors.items = [];
+  }
+
+  if (!visitors.hasMore && !reset) {
+    return;
+  }
+
+  const seq = (visitors.seq += 1);
+  visitors.loading = true;
+  updateVisitorsMore();
+
+  if (reset) {
+    el.visitorsLoading.hidden = false;
+    el.visitorsLoading.textContent = '加载中…';
+    el.visitorsEmpty.hidden = true;
+    el.visitorsItems.innerHTML = '';
+    el.visitorsSummary.textContent = '';
+  }
+
+  try {
+    const data = await call('visitors', {
+      query: { range: visitors.range, page: visitors.page },
+    });
+
+    if (seq !== visitors.seq) {
+      return;
+    }
+
+    // 站点未安装 VisitorStats 或从未采集
+    if (!data.available) {
+      el.visitorsLoading.hidden = false;
+      el.visitorsLoading.textContent = '暂无访问数据（需启用 VisitorStats 插件）';
+      visitors.hasMore = false;
+      updateVisitorsMore();
+      return;
+    }
+
+    const items = data.items || [];
+    visitors.items = reset ? items : [...visitors.items, ...items];
+    visitors.hasMore = Boolean(data.hasMore);
+    visitors.total = Number(data.total || 0);
+    visitors.uv = Number(data.uv || 0);
+
+    el.visitorsSummary.textContent = visitors.total
+      ? `浏览量 ${visitors.total} · 独立访客 ${visitors.uv}`
+      : '';
+
+    renderVisitors();
+    el.visitorsLoading.hidden = true;
+    updateVisitorsMore();
+  } catch (error) {
+    if (seq !== visitors.seq) {
+      return;
+    }
+
+    toast(error.message);
+
+    if (reset) {
+      el.visitorsLoading.hidden = false;
+      el.visitorsLoading.textContent = error.message;
+    }
+  } finally {
+    if (seq === visitors.seq) {
+      visitors.loading = false;
+    }
+  }
+}
+
+function updateVisitorsMore() {
+  el.visitorsMore.hidden = !visitors.hasMore || visitors.loading;
+  el.visitorsMore.disabled = visitors.loading;
+  el.visitorsMore.textContent = visitors.loading && visitors.items.length ? '加载中…' : '加载更多';
+}
+
+function renderVisitors() {
+  el.visitorsItems.innerHTML = '';
+
+  if (!visitors.items.length) {
+    el.visitorsEmpty.hidden = false;
+    return;
+  }
+
+  el.visitorsEmpty.hidden = true;
+
+  const fragment = document.createDocumentFragment();
+
+  visitors.items.forEach((item) => {
+    fragment.appendChild(createVisitorItem(item));
+  });
+
+  el.visitorsItems.appendChild(fragment);
+}
+
+function createVisitorItem(item) {
+  const wrap = document.createElement('div');
+  wrap.className = 'visitor-item';
+
+  const top = document.createElement('div');
+  top.className = 'visitor-top';
+
+  const title = document.createElement('strong');
+  title.className = 'visitor-title';
+  title.textContent = item.title || item.path || '/';
+
+  const time = document.createElement('span');
+  time.className = 'visitor-time';
+  time.textContent = formatVisitorTime(item.time);
+
+  top.append(title, time);
+  wrap.appendChild(top);
+
+  if (item.title && item.path) {
+    const path = document.createElement('p');
+    path.className = 'visitor-path';
+    path.textContent = item.path;
+    wrap.appendChild(path);
+  }
+
+  const meta = document.createElement('div');
+  meta.className = 'visitor-meta';
+
+  const place = document.createElement('span');
+  place.textContent = visitorPlace(item);
+
+  const ua = document.createElement('span');
+  ua.textContent = describeUA(item.ua);
+
+  const ip = document.createElement('span');
+  ip.className = 'visitor-ip';
+  ip.textContent = item.ip;
+
+  meta.append(place, ua, ip);
+  wrap.appendChild(meta);
+
+  const referrer = referrerHost(item.referrer);
+
+  if (referrer) {
+    const from = document.createElement('p');
+    from.className = 'visitor-referrer';
+    from.textContent = `来源 ${referrer}`;
+    wrap.appendChild(from);
+  }
+
+  return wrap;
+}
+
+/** "2026-11-25 06:12:34" → 今天只显示时间，其余带月日 */
+function formatVisitorTime(value) {
+  const text = String(value || '');
+  const date = text.slice(0, 10);
+  const clock = text.slice(11, 16);
+
+  if (!date || !clock) {
+    return text;
+  }
+
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  return date === today ? clock : `${date.slice(5)} ${clock}`;
+}
+
+function visitorPlace(item) {
+  const country = String(item.country || '').trim();
+  const region = String(item.region || '').trim();
+  const city = String(item.city || '').trim();
+
+  // VisitorStats 的 country 可能是「中国江苏省南京市电信」这类完整归属地，
+  // 再拼 region / city 会重复，命中时直接展示原始值
+  if (country && ((region && country.includes(region)) || (city && country.includes(city)))) {
+    return country;
+  }
+
+  const parts = [country, region, city].filter(
+    (part, index, list) => part && list.indexOf(part) === index
+  );
+
+  return parts.length ? parts.join(' · ') : '未知地区';
+}
+
+/**
+ * User-Agent 归并成「设备 · 浏览器 · 系统」
+ *
+ * Chrome 的 UA 也含 Safari，微信 / Edge 也含 Chrome，因此顺序不能乱。
+ */
+function describeUA(value) {
+  const text = String(value || '');
+
+  if (!text) {
+    return '未知设备';
+  }
+
+  const device = /iPad|Tablet/i.test(text)
+    ? '平板'
+    : /Mobile|Android|iPhone|iPod/i.test(text)
+      ? '手机'
+      : '电脑';
+
+  const rules = [
+    [/MicroMessenger/i, '微信'],
+    [/QQBrowser/i, 'QQ 浏览器'],
+    [/Edg\//i, 'Edge'],
+    [/OPR\/|Opera/i, 'Opera'],
+    [/Firefox\//i, 'Firefox'],
+    [/Chrome\//i, 'Chrome'],
+    [/Safari\//i, 'Safari'],
+  ];
+
+  let browser = '其他';
+
+  for (const [pattern, name] of rules) {
+    if (pattern.test(text)) {
+      browser = name;
+      break;
+    }
+  }
+
+  let os = '';
+
+  if (/Android/i.test(text)) {
+    os = 'Android';
+  } else if (/iPhone|iPad|iPod/i.test(text)) {
+    os = 'iOS';
+  } else if (/Windows/i.test(text)) {
+    os = 'Windows';
+  } else if (/Mac OS X/i.test(text)) {
+    os = 'macOS';
+  } else if (/Linux/i.test(text)) {
+    os = 'Linux';
+  }
+
+  return [device, browser, os].filter(Boolean).join(' · ');
+}
+
+function referrerHost(value) {
+  const text = String(value || '').trim();
+
+  if (!text) {
+    return '';
+  }
+
+  try {
+    return new URL(text).host || text;
+  } catch {
+    return text;
+  }
+}
+
 // ─── 抽屉通用 ────────────────────────────────────────────────────────────
 
 // 抽屉关闭动画延时器：快速连续开关时取消上一次
@@ -3385,6 +3674,26 @@ function bind() {
       item.classList.toggle('active', item === button);
     });
     loadStats();
+  });
+  $('#btn-visitors').addEventListener('click', openVisitors);
+  $('#btn-visitors-back').addEventListener('click', () => show('stats'));
+  $('#btn-visitors-refresh').addEventListener('click', () => loadVisitors(true));
+  el.visitorsRange.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-range]');
+
+    if (!button || button.dataset.range === visitors.range) {
+      return;
+    }
+
+    visitors.range = button.dataset.range;
+    el.visitorsRange.querySelectorAll('button').forEach((item) => {
+      item.classList.toggle('active', item === button);
+    });
+    loadVisitors(true);
+  });
+  el.visitorsMore.addEventListener('click', () => {
+    visitors.page += 1;
+    loadVisitors();
   });
   $('#btn-preview').addEventListener('click', () => openInBrowser(state.currentUrl));
   $('#btn-new').addEventListener('click', openNew);

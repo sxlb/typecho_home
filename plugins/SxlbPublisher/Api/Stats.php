@@ -140,6 +140,161 @@ class Stats
     }
 
     /**
+     * 访客明细
+     *
+     * 返回指定时间范围内的访问记录，按时间倒序分页；缺表时 available=false。
+     * 时间字段是站点时区的 datetime 字符串，边界同样用本地日期，不做偏移。
+     *
+     * @param string $range today / yesterday / 7d / 30d
+     * @return array<string, mixed>
+     */
+    public static function visitors(Db $db, string $range = 'today', int $page = 1, int $size = 30): array
+    {
+        if (!in_array($range, ['today', 'yesterday', '7d', '30d'], true)) {
+            $range = 'today';
+        }
+
+        $page = max(1, $page);
+        $size = min(50, max(10, $size));
+
+        try {
+            $db->fetchRow($db->select('id')->from('table.visitor_log')->limit(1));
+        } catch (\Throwable $e) {
+            return ['available' => false];
+        }
+
+        try {
+            self::applySiteTimezone();
+
+            $todayStart = date('Y-m-d 00:00:00');
+            $from = $todayStart;
+            $to = null;
+
+            switch ($range) {
+                case 'yesterday':
+                    $from = date('Y-m-d 00:00:00', strtotime('-1 day'));
+                    $to = $todayStart;
+                    break;
+                case '7d':
+                    $from = date('Y-m-d 00:00:00', strtotime('-6 days'));
+                    break;
+                case '30d':
+                    $from = date('Y-m-d 00:00:00', strtotime('-29 days'));
+                    break;
+            }
+
+            $countQuery = $db->select('COUNT(*) AS num')->from('table.visitor_log')
+                ->where('time >= ?', $from);
+
+            $uvQuery = $db->select('COUNT(DISTINCT ip) AS num')->from('table.visitor_log')
+                ->where('time >= ?', $from);
+
+            if ($to !== null) {
+                $countQuery->where('time < ?', $to);
+                $uvQuery->where('time < ?', $to);
+            }
+
+            $total = (int) $db->fetchObject($countQuery)->num;
+            $uv = (int) $db->fetchObject($uvQuery)->num;
+
+            $query = $db->select(
+                'id',
+                'ip',
+                'route',
+                'country',
+                'region',
+                'city',
+                'user_agent',
+                'referrer',
+                'time'
+            )
+                ->from('table.visitor_log')
+                ->where('time >= ?', $from)
+                ->order('time', Db::SORT_DESC)
+                ->order('id', Db::SORT_DESC)
+                ->offset(($page - 1) * $size)
+                ->limit($size);
+
+            if ($to !== null) {
+                $query->where('time < ?', $to);
+            }
+
+            $rows = $db->fetchAll($query);
+            $titles = self::visitorTitles($db, $rows);
+
+            $items = [];
+
+            foreach ($rows as $row) {
+                $route = (string) $row['route'];
+
+                $items[] = [
+                    'id' => (int) $row['id'],
+                    'ip' => (string) $row['ip'],
+                    'path' => rawurldecode($route === '' ? '/' : $route),
+                    'title' => $titles[$route] ?? '',
+                    'country' => (string) ($row['country'] ?? ''),
+                    'region' => (string) ($row['region'] ?? ''),
+                    'city' => (string) ($row['city'] ?? ''),
+                    'ua' => (string) ($row['user_agent'] ?? ''),
+                    'referrer' => (string) ($row['referrer'] ?? ''),
+                    'time' => (string) $row['time'],
+                ];
+            }
+
+            return [
+                'available' => true,
+                'range' => $range,
+                'page' => $page,
+                'size' => $size,
+                'total' => $total,
+                'uv' => $uv,
+                'hasMore' => $page * $size < $total,
+                'items' => $items,
+            ];
+        } catch (\Throwable $e) {
+            return ['available' => false];
+        }
+    }
+
+    /**
+     * 为访问记录里的文章路由补标题
+     *
+     * 同时登记带斜杠与不带斜杠两种键，避免固定链接差异导致匹配不上。
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<string, string>
+     */
+    private static function visitorTitles(Db $db, array $rows): array
+    {
+        $cids = [];
+
+        foreach ($rows as $row) {
+            if (preg_match('#^/archives/(\d+)/?$#', (string) $row['route'], $match)) {
+                $cids[] = (int) $match[1];
+            }
+        }
+
+        if (!$cids) {
+            return [];
+        }
+
+        $contents = $db->fetchAll(
+            $db->select('cid', 'title')->from('table.contents')
+                ->where('cid IN ?', array_values(array_unique($cids)))
+        );
+
+        $titles = [];
+
+        foreach ($contents as $content) {
+            $cid = (int) $content['cid'];
+            $titles['/archives/' . $cid . '/'] = (string) $content['title'];
+            $titles['/archives/' . $cid] = (string) $content['title'];
+        }
+
+        return $titles;
+    }
+
+    /**
      * 热门页面
      *
      * 日志里只存路由（如 /archives/12/），文章路由补充标题，其余原样展示路径。
