@@ -8,7 +8,8 @@
  */
 
 export const DEFAULT_SETTINGS = {
-  server: 'https://blog.sxlb.xyz',
+  // 不预填任何站点：每个用户填自己的地址，避免把 Token 发往他人域名
+  server: '',
   token: '',
   secret: '',
   // 编辑器模式：ir 即时渲染 / wysiwyg 所见即所得 / sv 分屏预览 / code 纯代码

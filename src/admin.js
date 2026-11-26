@@ -19,6 +19,8 @@ const el = {
   error: $('#admin-error'),
   errorText: $('#admin-error-text'),
   overview: $('#admin-overview'),
+  tabs: $('#admin-tabs'),
+  siteName: $('#admin-site'),
   stats: $('#admin-stats'),
   content: $('#admin-content'),
   entries: $('#admin-entries'),
@@ -65,6 +67,15 @@ export function initAdmin(options = {}) {
   $('#btn-admin-retry').addEventListener('click', () => load());
   $('#btn-admin-config-back').addEventListener('click', showList);
   $('#btn-admin-tools-back').addEventListener('click', showList);
+
+  // 分段切换：一次只显示一类，减少单屏信息量
+  el.tabs?.addEventListener('click', (event) => {
+    const button = event.target.closest('.admin-tab');
+
+    if (button) {
+      switchTab(button.dataset.tab);
+    }
+  });
   $('#btn-admin-tools-more').addEventListener('click', () => {
     if (!state.tool || state.tool.busy) {
       return;
@@ -85,6 +96,8 @@ export async function openAdmin() {
   }
 
   showList();
+  // 每次进入都从概览开始，避免停在上次的插件或站点分段
+  switchTab('summary');
   await load();
 }
 
@@ -163,6 +176,26 @@ function showList() {
   el.overview.hidden = !state.loaded;
 }
 
+/**
+ * 切换管理页分段
+ *
+ * @param {'summary'|'content'|'site'|'plugins'} name
+ */
+function switchTab(name) {
+  el.tabs?.querySelectorAll('.admin-tab').forEach((button) => {
+    const active = button.dataset.tab === name;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+
+  el.overview.querySelectorAll('.admin-panel').forEach((panel) => {
+    panel.hidden = panel.dataset.panel !== name;
+  });
+
+  // 切段后回到顶部，否则从长列表切到短面板会停在空白处
+  el.body.scrollTop = 0;
+}
+
 function showError(message) {
   el.loading.hidden = true;
   el.overview.hidden = true;
@@ -175,6 +208,12 @@ function showError(message) {
 // ─── 概览 ────────────────────────────────────────────────────────────────
 
 function renderStats(data) {
+  // 站点名作为概览段的标题，让人一眼知道在看哪个站
+  if (el.siteName) {
+    el.siteName.textContent = data.site || '';
+    el.siteName.hidden = !data.site;
+  }
+
   const items = [
     { label: '已发布', value: data.posts },
     { label: '草稿', value: data.drafts },
@@ -184,6 +223,8 @@ function renderStats(data) {
       hint: data.pendingComments ? `${data.pendingComments} 条待审核` : '',
     },
     { label: '媒体', value: data.media },
+    { label: '分类', value: data.categories },
+    { label: '标签', value: data.tags },
   ];
 
   el.stats.innerHTML = '';

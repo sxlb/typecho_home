@@ -283,9 +283,19 @@ body {
   border-radius: 9px;
   background: var(--accent);
   color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+}
+
+/* 墨迹标识：矢量图随 currentColor 变色，深浅色都不用另配图片 */
+.brand-mark svg,
+.me-avatar svg {
+  display: block;
+}
+
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
 }
 
 .brand h1 {
@@ -3401,6 +3411,47 @@ body.modal-open #view-editor .vditor-sv {
   color: var(--ink-2);
 }
 
+/* 分段栏：吸附在顶部，切换分类时不用回滚 */
+.admin-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  gap: 4px;
+  margin: -16px -16px 16px;
+  padding: 10px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-tab {
+  flex: 1;
+  padding: 8px 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.admin-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.admin-site {
+  margin: 0 2px 12px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3885,8 +3936,6 @@ body.has-tabbar .toast {
   border-radius: 50%;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 18px;
-  font-weight: 600;
 }
 
 .me-info {
