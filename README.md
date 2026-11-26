@@ -4,6 +4,12 @@
 
 前端使用 Vite + Vditor，容器为 Capacitor 7（Android WebView）；服务端由同仓库的 Typecho 插件 `SxlbPublisher` 提供带 HMAC 签名的接口。
 
+> **高度集成 Handsome 主题**
+>
+> 本客户端的字段与数据是按 [Handsome](https://github.com/Daboia/handsome) 主题的实现对接的：文章缩略图 / 摘要 / 原创转载等 13 个自定义字段、相册（`slug=image` 分类）、说说（时光机）、友情链接、主题设置表单与主题缓存清理，均直接读写 Handsome 的存储结构。
+>
+> 若站点使用其他主题，**核心写作、草稿 / 定时发布、分类标签、文章列表与编辑器功能仍然可用**；但依赖 Handsome 的相册、说说、友链、主题设置与缓存清理可能读不到数据、显示为空或无法生效。插件本身不依赖主题，上述差异不影响 API 鉴权与发布流程。
+
 ## 功能介绍
 
 ### 写作与发布
