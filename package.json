@@ -1,7 +1,7 @@
 {
   "name": "sxlb-writer",
   "private": true,
-  "version": "2.26.1",
+  "version": "2.26.2",
   "type": "module",
   "description": "淡墨 · 博客安卓写作客户端",
   "scripts": {

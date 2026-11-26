@@ -17,6 +17,7 @@ import {
   listDrafts,
   pushHistory,
   readHistory,
+  clearHistory,
   migrateLegacyDraft,
 } from './local.js';
 import { App } from '@capacitor/app';
@@ -872,12 +873,21 @@ function postDraftSummaryDiffers(draft, item) {
   );
 }
 
-/** 列表分组：今天 / 昨天 / 本周 / 更早 */
+/**
+ * 分组标签：未来 / 今天 / 昨天 / 本周 / 更早
+ *
+ * 定时发布文章的 created 在未来，不能被算进「今天」，否则未来几天的稿子
+ * 会和今天混在一起，用户无法从分组看出哪些还没上线。
+ */
 function groupLabel(timestamp) {
   const date = new Date(timestamp * 1000);
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const time = date.getTime();
+
+  if (time >= startOfToday + 86400000) {
+    return '未来';
+  }
 
   if (time >= startOfToday) {
     return '今天';
@@ -1166,6 +1176,8 @@ function openItemSheet(item) {
         }
 
         removeDraft(item.id);
+        // 历史版本按草稿键存储，不一起删会在 localStorage 里永久残留
+        clearHistory(item.id);
         closeItemSheet();
 
         if (item.kind === 'page') {
@@ -1220,6 +1232,7 @@ function openItemSheet(item) {
         try {
           await call('pageDelete', { method: 'POST', body: { cid: item.cid } });
           removeDraft(`page-${item.cid}`);
+          clearHistory(`page-${item.cid}`);
           closeItemSheet();
           await loadPages({ reset: true });
           toast('已删除');
@@ -1276,6 +1289,7 @@ function openItemSheet(item) {
         try {
           await call('delete', { method: 'POST', body: { cid: item.cid } });
           removeDraft(String(item.cid));
+          clearHistory(String(item.cid));
           closeItemSheet();
           await loadPosts();
           toast('已删除');
@@ -2525,6 +2539,7 @@ async function deleteAlbumPost() {
   try {
     await call('delete', { method: 'POST', body: { cid: item.cid } });
     removeDraft(String(item.cid));
+    clearHistory(String(item.cid));
 
     const removed = item.cid;
     closeAlbumViewer();
@@ -3337,6 +3352,10 @@ async function submitPage() {
     state.dirty = false;
 
     removeDraft(previousKey);
+    // 页面草稿键用完即弃，历史快照同样要清理，避免残留占满本地存储
+    if (previousKey) {
+      clearHistory(previousKey);
+    }
     state.draftKey = '';
 
     destroyEditor();
@@ -4656,6 +4675,12 @@ async function submit(isDraft) {
 
     removeDraft(previousKey);
     removeDraft(String(result.cid));
+
+    // 新文章的草稿键（draft-xxx）发布后作废，它的历史版本也一并清掉，
+    // 否则每次「新建 → 发布」都会在 localStorage 留下一份无用快照
+    if (previousKey && previousKey !== String(result.cid)) {
+      clearHistory(previousKey);
+    }
 
     closeSheet();
     destroyEditor();
