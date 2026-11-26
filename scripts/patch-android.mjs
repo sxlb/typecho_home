@@ -50,3 +50,28 @@ android {
 
 writeFileSync(gradlePath, gradle);
 console.log(`android/app/build.gradle -> versionName ${pkg.version}, versionCode ${versionCode}, 固定签名已写入`);
+
+/**
+ * 应用内更新需要拉起系统安装器，必须声明 REQUEST_INSTALL_PACKAGES。
+ * cap add android 每次重新生成的模板里没有这一行，只能在这里补。
+ */
+const manifestPath = 'android/app/src/main/AndroidManifest.xml';
+let manifest = readFileSync(manifestPath, 'utf-8');
+
+if (!manifest.includes('REQUEST_INSTALL_PACKAGES')) {
+  const permission = '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />';
+
+  if (/<uses-permission[^>]*\/>/.test(manifest)) {
+    manifest = manifest.replace(/<uses-permission[^>]*\/>/, (tag) => `${tag}\n${permission}`);
+  } else {
+    manifest = manifest.replace('<application', `${permission}\n\n    <application`);
+  }
+
+  writeFileSync(manifestPath, manifest);
+}
+
+if (!readFileSync(manifestPath, 'utf-8').includes('REQUEST_INSTALL_PACKAGES')) {
+  throw new Error('写入安装权限失败：AndroidManifest.xml 模板可能已变化');
+}
+
+console.log('AndroidManifest.xml -> REQUEST_INSTALL_PACKAGES 已写入');

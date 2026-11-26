@@ -649,8 +649,24 @@
             <span class="settings-meta-version" id="app-version">当前版本</span>
             <button class="text-btn accent" id="btn-check-update" type="button">检查更新</button>
           </div>
+
+          <!-- 更新面板：发现新版本后出现，下载完成后保留安装入口 -->
+          <div class="update-panel" id="update-panel" hidden>
+            <div class="update-head">
+              <span class="update-title" id="update-title">发现新版本</span>
+              <span class="update-badge" id="update-badge"></span>
+            </div>
+            <p class="update-desc" id="update-desc"></p>
+            <div class="update-progress" id="update-progress" hidden><span></span></div>
+            <div class="update-actions">
+              <button class="btn primary" id="btn-update-install" type="button">下载并安装</button>
+              <button class="btn ghost small" id="btn-update-browser" type="button">用浏览器下载</button>
+            </div>
+          </div>
+
           <p class="settings-hint">
-            Token 与 Secret 在博客后台「插件 → SxlbPublisher 设置」中查看，密钥只保存在本机。
+            Token 与 Secret 在博客后台「插件 → SxlbPublisher 设置」中查看，密钥只保存在本机。直连 GitHub
+            失败时会自动改用公共加速镜像下载。
           </p>
 
           <!-- 底部动作条：滚动时始终可见，不用翻到最后才能保存 -->

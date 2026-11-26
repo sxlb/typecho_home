@@ -22,11 +22,17 @@ import {
 } from './local.js';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
+import {
+  downloadApk,
+  fetchLatestRelease,
+  findSavedApk,
+  openApk,
+  saveApk,
+} from './update.js';
 
 const $ = (selector) => document.querySelector(selector);
 
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0';
-const RELEASE_API = 'https://api.github.com/repos/sxlb/typecho_home/releases/tags/latest';
 const DOWNLOAD_URL = 'https://github.com/sxlb/typecho_home/releases/latest/download/sxlb-writer.apk';
 
 const el = {
@@ -163,6 +169,15 @@ const el = {
   preview: $('#btn-preview'),
   dialog: $('#dialog'),
   appVersion: $('#app-version'),
+  update: {
+    panel: $('#update-panel'),
+    title: $('#update-title'),
+    badge: $('#update-badge'),
+    desc: $('#update-desc'),
+    bar: $('#update-progress'),
+    install: $('#btn-update-install'),
+    browser: $('#btn-update-browser'),
+  },
   toast: $('#toast'),
   check: {
     panel: $('#publish-check'),
@@ -4824,6 +4839,8 @@ function openSettings() {
 
   syncSettingsHero();
   renderVersion();
+  // 自动检查可能在进入设置页之前就发现了新版本，这里同步一次面板状态
+  renderUpdatePanel();
   show('settings');
 }
 
@@ -5018,47 +5035,56 @@ function compareVersion(a, b) {
   return 0;
 }
 
-// 更新检查进行中标记：避免连点重复请求、重复写剪贴板
+// 更新检查进行中标记：避免连点重复请求、重复下载
 let updateChecking = false;
+// 下载 / 安装阶段：idle 未开始、downloading 下载中、saved 已就绪、failed 失败
+let updateStage = 'idle';
+let updateError = '';
+let updateSource = '';
+let savedApkUri = '';
+// 浏览器环境下没有文件 URI 语义，安装时直接复用内存里的 Blob
+let savedApkBlob = null;
 
-async function checkUpdate(manual = false) {
+/**
+ * 检查更新
+ *
+ * @param {{manual?: boolean}} [options] manual 为真时：无更新给提示，有更新自动开始下载
+ */
+async function checkUpdate({ manual = false } = {}) {
   if (updateChecking) {
     return;
   }
 
   updateChecking = true;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const response = await fetch(RELEASE_API, {
-      headers: { Accept: 'application/vnd.github+json' },
-      signal: controller.signal,
-    });
+    const latest = await fetchLatestRelease();
 
-    if (!response.ok) {
-      throw new Error('release');
-    }
-
-    const data = await response.json();
-    const match = String(data.body || '').match(/版本[：:]\s*v?([\d.]+)/);
-
-    if (!match) {
-      throw new Error('version');
-    }
-
-    state.update = { version: match[1] };
+    state.update = latest;
     renderVersion();
 
-    if (compareVersion(match[1], APP_VERSION) > 0) {
+    if (compareVersion(latest.version, APP_VERSION) <= 0) {
+      updateStage = 'idle';
+      renderUpdatePanel();
+
       if (manual) {
-        await copyText(DOWNLOAD_URL);
-        toast(`发现新版本 v${match[1]}，下载链接已复制`);
-      } else {
-        toast(`发现新版本 v${match[1]}，设置页可查看`);
+        toast('当前已是最新版本');
       }
-    } else if (manual) {
-      toast('当前已是最新版本');
+
+      return;
+    }
+
+    // 版本号变了说明缓存的旧包已过期，直接丢弃重新下
+    savedApkUri = '';
+    savedApkBlob = null;
+
+    if (manual) {
+      // 手动点「检查更新」= 想升级，直接开始下载
+      startUpdate();
+    } else {
+      updateStage = 'idle';
+      renderUpdatePanel();
+      toast(`发现新版本 v${latest.version}，可在设置中更新`);
     }
 
     // 只有检查成功才记录时间：失败时下次打开还会重试
@@ -5069,13 +5095,158 @@ async function checkUpdate(manual = false) {
     }
   } catch {
     if (manual) {
-      toast('检查更新失败，请稍后再试');
+      toast('检查更新失败，请检查网络后重试');
     }
   } finally {
-    clearTimeout(timer);
     updateChecking = false;
   }
 }
+
+/**
+ * 渲染更新面板
+ *
+ * 五种状态共用一块区域：未发现新版本时整块隐藏。
+ */
+function renderUpdatePanel() {
+  const panel = el.update.panel;
+
+  if (!panel) {
+    return;
+  }
+
+  const info = state.update || {};
+  const hasUpdate = info.version && compareVersion(info.version, APP_VERSION) > 0;
+
+  // 没有新版本（或正在下载旧版本）时整块隐藏
+  panel.hidden = !hasUpdate;
+
+  if (!hasUpdate) {
+    return;
+  }
+
+  el.update.badge.textContent = `v${info.version}`;
+  el.update.panel.dataset.stage = updateStage;
+
+  const size = info.size ? ` · ${(info.size / 1024 / 1024).toFixed(1)} MB` : '';
+  const texts = {
+    idle: ['发现新版本', `下载完成后会自动打开安装界面${size}`],
+    downloading: ['正在下载', `正在从 ${updateSource || 'GitHub'} 下载${size}，请保持网络畅通`],
+    saved: ['已下载', '点「打开安装器」继续；若系统提示授权，请允许安装未知应用'],
+    failed: ['更新未完成', updateError || '下载失败，可换用浏览器下载'],
+  };
+  const [title, desc] = texts[updateStage] || texts.idle;
+
+  el.update.title.textContent = title;
+  el.update.desc.textContent = desc;
+
+  el.update.bar.hidden = updateStage !== 'downloading';
+  el.update.install.hidden = updateStage === 'downloading';
+  el.update.install.disabled = updateStage === 'downloading';
+
+  // 已经落盘时按钮变成「打开安装器」，否则是重新下载
+  const readyToInstall = savedApkUri && (updateStage === 'saved' || updateStage === 'failed');
+  el.update.install.textContent = readyToInstall
+    ? '打开安装器'
+    : updateStage === 'failed'
+      ? '重试'
+      : '下载并安装';
+  el.update.browser.hidden = updateStage === 'downloading';
+}
+
+/**
+ * 下载并安装
+ *
+ * 下载成功先落盘再拉起安装器：用户切后台或 WebView 被回收后，
+ * 回到前台还能直接装，不用重新下一遍。
+ */
+async function startUpdate() {
+  const info = state.update;
+
+  if (!info?.version || updateStage === 'downloading') {
+    return;
+  }
+
+  updateStage = 'downloading';
+  updateSource = '';
+  updateError = '';
+  renderUpdatePanel();
+
+  try {
+    const { blob, source } = await downloadApk(info.apkUrl, {
+      onSource: (name) => {
+        updateSource = name;
+        renderUpdatePanel();
+      },
+    });
+
+    savedApkBlob = blob;
+    savedApkUri = await saveApk(blob);
+    updateStage = 'saved';
+    renderUpdatePanel();
+
+    await launchInstaller();
+  } catch (error) {
+    updateStage = 'failed';
+    updateError = describeUpdateError(error);
+    renderUpdatePanel();
+    toast(updateError);
+  }
+}
+
+/**
+ * 拉起系统安装界面
+ *
+ * 从后台返回时 Android 会拦截应用启动 Activity，因此失败不算致命：
+ * 文件已在缓存里，用户点「安装」按钮即可重试。
+ */
+async function launchInstaller() {
+  if (!savedApkUri) {
+    return;
+  }
+
+  try {
+    await openApk(savedApkUri, savedApkBlob);
+  } catch (error) {
+    updateStage = 'failed';
+    updateError = `无法自动打开安装界面，请点下方「安装」重试（${error.message || '未知原因'}）`;
+    renderUpdatePanel();
+  }
+}
+
+/**
+ * 用户点「安装」：文件还在就直接装，被系统清掉就重新下载
+ */
+async function installSavedApk() {
+  if (!savedApkUri) {
+    savedApkUri = await findSavedApk();
+  }
+
+  if (!savedApkUri) {
+    // 缓存被清理：重新走一遍下载
+    startUpdate();
+    return;
+  }
+
+  updateStage = 'saved';
+  renderUpdatePanel();
+  await launchInstaller();
+}
+
+/** 把底层错误翻译成用户能看懂的说明 */
+function describeUpdateError(error) {
+  const message = String(error?.message || '');
+
+  if (/timeout|timed out|abort/i.test(message)) {
+    return '下载超时，请检查网络后重试';
+  }
+
+  if (/HTTP 4\d\d/.test(message)) {
+    return `下载被拒绝（${message}），请稍后重试`;
+  }
+
+  return '下载失败，可换用浏览器下载';
+}
+
 
 /**
  * 列表下拉刷新
@@ -5172,7 +5343,11 @@ function bind() {
     openAdmin();
   });
   $('#me-settings').addEventListener('click', openSettings);
-  $('#me-update').addEventListener('click', () => checkUpdate(true));
+  $('#me-update').addEventListener('click', async () => {
+    // 「我的」页也能直接升级：先切到设置页展示更新面板，再开始下载
+    openSettings();
+    await checkUpdate({ manual: true });
+  });
   $('#btn-shuoshuo-refresh').addEventListener('click', () => loadShuoshuo({ reset: true }));
   $('#btn-shuoshuo-new').addEventListener('click', () => openShuoshuoSheet());
   $('#shuoshuo-sheet-close').addEventListener('click', closeShuoshuoSheet);
@@ -5437,7 +5612,24 @@ function bind() {
     customPreview = null;
     toast('设置已保存');
   });
-  $('#btn-check-update').addEventListener('click', () => checkUpdate(true));
+  $('#btn-check-update').addEventListener('click', () => checkUpdate({ manual: true }));
+
+  // 更新面板：下载并安装 / 换浏览器下载 / 已下载后重新唤起安装器
+  el.update.install?.addEventListener('click', () => {
+    const ready = savedApkUri && (updateStage === 'saved' || updateStage === 'failed');
+
+    if (ready) {
+      installSavedApk();
+      return;
+    }
+
+    startUpdate();
+  });
+
+  el.update.browser?.addEventListener('click', async () => {
+    const url = state.update?.apkUrl || DOWNLOAD_URL;
+    await openInBrowser(url);
+  });
 
   // 外观切换即时预览，但目前只是预览：不点「保存设置」离开会回滚
   el.settings.theme.addEventListener('change', () => applyTheme(el.settings.theme.value));
@@ -5605,11 +5797,27 @@ function bind() {
       } else if (state.view === 'calendar') {
         show('admin');
       } else if (state.view === 'settings') {
-        // 与屏幕上的返回按钮一致：先保存表单，再按来源返回；
+        // 与屏幕上的返回按钮一致：不保存表单，配置不完整时拦截；
         // 表单全空且未配置时才允许退出 App
         leaveSettings({ allowExit: true });
       } else {
         App.exitApp();
+      }
+    });
+
+    // 从后台回来：下载可能已经完成，或在后台被系统拦下了安装意图
+    App.addListener('appStateChange', ({ isActive }) => {
+      if (!isActive || !savedApkUri) {
+        return;
+      }
+
+      if (updateStage === 'saved' || updateStage === 'failed') {
+        if (state.view !== 'settings') {
+          openSettings();
+        }
+
+        renderUpdatePanel();
+        toast('更新已下载，点「安装」继续');
       }
     });
   }
@@ -5646,7 +5854,7 @@ if (isConfigured()) {
 
   const lastCheck = Number(localStorage.getItem('sxlb.updateCheck') || 0);
   if (Date.now() - lastCheck > 24 * 3600 * 1000) {
-    checkUpdate(false);
+    checkUpdate();
   }
 } else {
   openSettings();

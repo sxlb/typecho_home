@@ -1906,6 +1906,89 @@ body {
   flex: 1;
 }
 
+/* 更新面板 */
+.update-panel {
+  margin-top: 12px;
+  padding: 14px 15px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.update-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.update-title {
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.update-panel[data-stage='failed'] .update-title {
+  color: var(--warn);
+}
+
+.update-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.update-desc {
+  margin: 6px 0 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 原生下载拿不到分段进度，用流动条纹表示「进行中」而不是假的百分比 */
+.update-progress {
+  position: relative;
+  height: 4px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.update-progress span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: update-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes update-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+.update-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.update-actions .btn.primary {
+  flex: 1;
+}
+
 /* ─── 表单 ─────────────────────────────────────────────── */
 
 .field {
