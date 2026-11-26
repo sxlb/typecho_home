@@ -70,9 +70,11 @@ class Shuoshuo
 
         $total = (int) $db->fetchObject($countQuery)->num;
         $items = [];
+        $rows = $db->fetchAll($rowsQuery);
+        $replies = self::replyCounts($db, $cid, $rows);
 
-        foreach ($db->fetchAll($rowsQuery) as $row) {
-            $items[] = self::parseItem($row);
+        foreach ($rows as $row) {
+            $items[] = self::parseItem($row) + ['replies' => $replies[(int) $row['coid']] ?? 0];
         }
 
         return ['items' => $items, 'total' => $total, 'page' => $page, 'size' => $size, 'cid' => $cid];
@@ -316,6 +318,38 @@ class Shuoshuo
             'secret' => $secret,
             'stars' => (int) ($row['stars'] ?? 0),
         ];
+    }
+
+    /**
+     * 批量统计每条说说下的已通过回复数
+     *
+     * @param array $rows 说说行（至少含 coid）
+     * @return array<int, int> coid => 回复数
+     */
+    private static function replyCounts(Db $db, int $cid, array $rows): array
+    {
+        $coids = array_map(static fn(array $row): int => (int) $row['coid'], $rows);
+
+        if (empty($coids)) {
+            return [];
+        }
+
+        $result = $db->fetchAll(
+            $db->select('parent', ['COUNT(coid)' => 'num'])
+                ->from('table.comments')
+                ->where('cid = ?', $cid)
+                ->where('parent IN ?', $coids)
+                ->where('status = ?', 'approved')
+                ->group('parent')
+        );
+
+        $map = [];
+
+        foreach ($result as $row) {
+            $map[(int) $row['parent']] = (int) $row['num'];
+        }
+
+        return $map;
     }
 
     /**

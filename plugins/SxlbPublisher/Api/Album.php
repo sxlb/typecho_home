@@ -101,6 +101,7 @@ class Album
                 'cover' => $cover,
                 'images' => $images,
                 'count' => count($images),
+                'comments' => (int) $row['commentsNum'],
                 'url' => self::permalink($row),
             ];
         }

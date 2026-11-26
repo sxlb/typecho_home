@@ -29,6 +29,8 @@ export const DEFAULT_SETTINGS = {
   },
   // 管理模式：on 显示入口 / off 隐藏入口（服务端还需开启「管理接口」）
   adminMode: 'off',
+  // 打开已发布文章：preview 先看预览 / edit 直接进编辑器
+  postOpenMode: 'preview',
 };
 
 const SETTINGS_KEY = 'sxlb.settings';

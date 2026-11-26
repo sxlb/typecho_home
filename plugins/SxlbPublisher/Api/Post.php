@@ -68,6 +68,8 @@ class Post
             ['table.contents.modified' => 'modified'],
             ['table.contents.status' => 'status'],
             ['table.contents.type' => 'type'],
+            // 已通过评论数：列表上显示评论入口与数量
+            ['table.contents.commentsNum' => 'comments'],
             // order 作为「置顶」标记：> 0 时排在列表最前。
             // 别名不能叫 order（保留字），统一用 pinned
             ['table.contents.order' => 'pinned']
@@ -119,6 +121,7 @@ class Post
                 'status' => $row['type'] === 'post_draft' ? 'draft' : 'publish',
                 'scheduled' => $row['type'] === 'post' && (int) $row['created'] > $now,
                 'pinned' => (int) $row['pinned'] > 0,
+                'comments' => (int) $row['comments'],
             ];
         }
 

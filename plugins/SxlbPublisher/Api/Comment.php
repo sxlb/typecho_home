@@ -23,6 +23,7 @@ class Comment
      * @param string $status approved / waiting / spam / all
      * @param int $cid 只查某篇文章下的评论，0 表示不限
      * @param string $keyword 按作者 / 内容 / 文章标题模糊匹配
+     * @param int $parent 只查某条评论下的回复（说说详情的评论），-1 表示不限
      * @return array{items: array, total: int, page: int, size: int}
      */
     public static function listing(
@@ -31,7 +32,8 @@ class Comment
         int $size,
         string $status,
         int $cid = 0,
-        string $keyword = ''
+        string $keyword = '',
+        int $parent = -1
     ): array {
         $filter = self::normalizeStatus($status);
 
@@ -57,8 +59,8 @@ class Comment
             ->order('table.comments.coid', Db::SORT_DESC)
             ->page($page, $size);
 
-        self::applyFilter($countQuery, $filter, $cid);
-        self::applyFilter($rowsQuery, $filter, $cid);
+        self::applyFilter($countQuery, $filter, $cid, $parent);
+        self::applyFilter($rowsQuery, $filter, $cid, $parent);
 
         // 搜索：作者、内容、所属文章标题，转义 LIKE 通配符避免用户输入 % _ 被当成模式
         $keyword = trim($keyword);
@@ -221,7 +223,7 @@ class Comment
     /**
      * @param mixed $query
      */
-    private static function applyFilter($query, ?string $status, int $cid): void
+    private static function applyFilter($query, ?string $status, int $cid, int $parent): void
     {
         if ($status !== null) {
             $query->where('table.comments.status = ?', $status);
@@ -229,6 +231,11 @@ class Comment
 
         if ($cid > 0) {
             $query->where('table.comments.cid = ?', $cid);
+        }
+
+        // 说说详情：只取挂在这条说说下面的回复
+        if ($parent >= 0) {
+            $query->where('table.comments.parent = ?', $parent);
         }
     }
 

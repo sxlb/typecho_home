@@ -779,6 +779,7 @@ body {
 }
 
 .album-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -4150,6 +4151,251 @@ body.has-tabbar .toast {
   text-align: center;
   font-size: 12px;
   color: var(--ink-3);
+}
+
+/* ─── 预览 / 评论 ─────────────────────────────────────── */
+
+.detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 20px calc(40px + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+}
+
+.detail-title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.detail-meta {
+  margin: 0 0 18px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.detail-markdown {
+  font-size: 15.5px;
+  line-height: 1.75;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.detail-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+
+.detail-markdown pre {
+  overflow-x: auto;
+}
+
+.detail-comments {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.detail-comments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.detail-comments-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.detail-comment-count {
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.detail-comment-hint {
+  margin: 14px 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.comment-item {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.comment-item:last-child {
+  border-bottom: 0;
+}
+
+.comment-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.comment-author {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.comment-time {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.comment-status {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.comment-status.waiting {
+  background: rgba(240, 160, 30, 0.14);
+  color: var(--warn);
+}
+
+.comment-status.spam {
+  background: rgba(200, 80, 60, 0.12);
+  color: var(--danger);
+}
+
+.comment-status.reply {
+  background: var(--hover);
+  color: var(--ink-3);
+}
+
+.comment-text {
+  margin: 7px 0 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.comment-act {
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.comment-act:active {
+  color: var(--ink);
+}
+
+.comment-act.armed,
+.comment-act.danger {
+  color: var(--danger);
+}
+
+.comment-reply {
+  margin-top: 10px;
+}
+
+.comment-reply textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.comment-reply .btn {
+  margin-top: 8px;
+}
+
+/* 列表项右侧的评论 / 预览按钮 */
+.post-tool {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-3);
+}
+
+.post-tool:active {
+  background: var(--bg);
+}
+
+.post-tool-count {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.shuoshuo-comment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+
+.shuoshuo-comment:active {
+  color: var(--accent);
+}
+
+/* 相册封面右上角的评论数 */
+.album-comments {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 /* ─── 列表骨架屏 ───────────────────────────────────────── */

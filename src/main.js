@@ -9,6 +9,7 @@ import {
   closeEditorSheets,
 } from './editor.js';
 import { initAdmin, openAdmin, handleAdminBack, refreshMeStats, setAdminEnabled } from './admin.js';
+import { initDetail, openPostDetail, openShuoshuoDetail, resetDetail } from './detail.js';
 import {
   newDraftId,
   readDraft,
@@ -35,6 +36,10 @@ const $ = (selector) => document.querySelector(selector);
 const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0';
 const DOWNLOAD_URL = 'https://github.com/sxlb/typecho_home/releases/latest/download/sxlb-writer.apk';
 
+// 列表项右侧的小图标：评论 / 预览
+const COMMENT_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.6a8.4 8.4 0 0 1-9.3 8.4 9.2 9.2 0 0 1-3.2-.7L3 21l1.7-4.9A8.4 8.4 0 1 1 21 11.6z"/></svg>';
+const PREVIEW_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12S18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/></svg>';
+
 const el = {
   views: {
     list: $('#view-list'),
@@ -43,6 +48,7 @@ const el = {
     album: $('#view-album'),
     calendar: $('#view-calendar'),
     me: $('#view-me'),
+    detail: $('#view-detail'),
     pages: $('#view-pages'),
     links: $('#view-links'),
     stats: $('#view-stats'),
@@ -194,6 +200,7 @@ const el = {
     heroVersion: $('#settings-hero-version'),
     mode: $('#set-editor-mode'),
     size: $('#set-editor-size'),
+    postOpen: $('#set-post-open'),
     theme: $('#set-theme'),
     style: $('#set-style'),
     custom: $('#custom-theme'),
@@ -220,6 +227,8 @@ const state = {
   pagesFrom: 'list',
   // 从相册 / 日历进入的文章编辑器，返回时回到来源视图（'' 表示首页列表）
   returnView: '',
+  // 预览页的来源视图，返回时回到这里
+  detailFrom: 'list',
   // 设置页的来源：me 表示从「我的」进入
   settingsFrom: 'list',
   // 当前编辑的文章是否属于相册分类（决定「相册描述」字段是否显示）
@@ -1013,6 +1022,9 @@ function createItem({ title, badge = '', time, status = '', unsynced = false, it
       }
     } else if (item.kind === 'page') {
       openPage(item.cid);
+    } else if (item.status === 'publish' && !item.scheduled && openPreference() === 'preview') {
+      // 已发布文章默认先看成品，草稿 / 定时稿仍直接进编辑器
+      previewPost(item.cid);
     } else {
       openPost(item.cid);
     }
@@ -1045,10 +1057,94 @@ function createItem({ title, badge = '', time, status = '', unsynced = false, it
 
   // 多选模式下「更多」让位给勾选框，避免误触
   if (!state.selecting) {
+    buildItemTools(item).forEach((node) => wrap.appendChild(node));
     wrap.appendChild(more);
   }
 
   return wrap;
+}
+
+/**
+ * 列表项右侧的快捷入口：评论 / 预览
+ *
+ * 评论入口只对已发布的文章显示；按设置选「直接编辑」时额外给一个预览按钮。
+ *
+ * @param {object} item
+ * @returns {HTMLElement[]}
+ */
+function buildItemTools(item) {
+  if (item.local || item.kind === 'page' || item.status !== 'publish') {
+    return [];
+  }
+
+  const tools = [];
+  const count = Number(item.comments || 0);
+
+  const comment = document.createElement('button');
+  comment.type = 'button';
+  comment.className = 'post-tool';
+  comment.setAttribute('aria-label', count ? `查看评论，共 ${count} 条` : '查看评论');
+  comment.innerHTML = `${COMMENT_ICON}${count ? `<span class="post-tool-count">${count > 99 ? '99+' : count}</span>` : ''}`;
+  comment.addEventListener('click', (event) => {
+    event.stopPropagation();
+    previewPost(item.cid);
+  });
+  tools.push(comment);
+
+  if (openPreference() === 'edit' && !item.scheduled) {
+    const preview = document.createElement('button');
+    preview.type = 'button';
+    preview.className = 'post-tool';
+    preview.setAttribute('aria-label', '预览');
+    preview.innerHTML = PREVIEW_ICON;
+    preview.addEventListener('click', (event) => {
+      event.stopPropagation();
+      previewPost(item.cid);
+    });
+    tools.push(preview);
+  }
+
+  return tools;
+}
+
+/**
+ * 已发布文章的打开方式：preview 先看成品 / edit 直接编辑
+ *
+ * @returns {'preview'|'edit'}
+ */
+function openPreference() {
+  return (getSettings().postOpenMode || DEFAULT_SETTINGS.postOpenMode) === 'edit'
+    ? 'edit'
+    : 'preview';
+}
+
+/**
+ * 打开文章预览
+ *
+ * @param {number} cid
+ */
+function previewPost(cid) {
+  // 从编辑器回来时，预览的返回目标是首页而不是编辑器
+  state.detailFrom = state.view === 'editor' ? 'list' : state.view;
+  show('detail');
+  openPostDetail(cid);
+}
+
+/**
+ * 打开说说详情（评论即这条说说下的回复）
+ *
+ * @param {object} item
+ */
+function previewShuoshuo(item) {
+  state.detailFrom = state.view;
+  show('detail');
+  openShuoshuoDetail(item);
+}
+
+/** 关闭预览，回到进入前的视图 */
+function closeDetail() {
+  resetDetail();
+  show(state.detailFrom || 'list');
 }
 
 // ─── 批量选择 ────────────────────────────────────────────────────────────
@@ -1757,6 +1853,11 @@ async function openPost(cid) {
   const seq = (openDetailSeq += 1);
   const fromView = state.view;
 
+  // 从预览页点「编辑」进来的，保存或返回后仍回预览，方便对照成品
+  if (fromView === 'detail') {
+    state.returnView = 'detail';
+  }
+
   try {
     const post = await call('post', { query: { cid } });
 
@@ -1841,6 +1942,12 @@ function backToList() {
   }
 
   // 从相册 / 日历进入的编辑，保存或返回后回来源视图，避免跳到首页
+  if (state.returnView === 'detail') {
+    state.returnView = '';
+    previewPost(state.cid);
+    return;
+  }
+
   if (state.returnView === 'album') {
     state.returnView = '';
     show('album');
@@ -2103,6 +2210,15 @@ function createShuoshuoItem(item) {
 
     wrap.appendChild(grid);
   }
+
+  // 底部的评论入口：点击进详情看回复，站长可当场审核
+  const comments = Number(item.replies || 0);
+  const commentBar = document.createElement('button');
+  commentBar.type = 'button';
+  commentBar.className = 'shuoshuo-comment';
+  commentBar.innerHTML = `${COMMENT_ICON}<span>${comments ? `评论 ${comments}` : '评论'}</span>`;
+  commentBar.addEventListener('click', () => previewShuoshuo(item));
+  wrap.appendChild(commentBar);
 
   return wrap;
 }
@@ -2418,9 +2534,10 @@ function renderAlbum() {
 }
 
 function createAlbumCard(item) {
-  const card = document.createElement('button');
-  card.type = 'button';
+  const card = document.createElement('div');
   card.className = 'album-card';
+  card.setAttribute('role', 'button');
+  card.tabIndex = 0;
 
   const cover = document.createElement('span');
   cover.className = 'album-cover';
@@ -2469,7 +2586,28 @@ function createAlbumCard(item) {
   date.textContent = formatDate(item.created);
 
   card.append(cover, title, date);
+
+  // 评论入口浮在封面右上角，点卡片仍然是看图
+  const comments = Number(item.comments || 0);
+  if (comments > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'album-comments';
+    badge.innerHTML = COMMENT_ICON + `<span>${comments > 99 ? '99+' : comments}</span>`;
+    badge.setAttribute('aria-label', `查看评论，共 ${comments} 条`);
+    badge.addEventListener('click', (event) => {
+      event.stopPropagation();
+      previewPost(item.cid);
+    });
+    card.appendChild(badge);
+  }
+
   card.addEventListener('click', () => openAlbumViewer(item));
+  card.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openAlbumViewer(item);
+    }
+  });
 
   return card;
 }
@@ -4839,6 +4977,7 @@ function openSettings() {
   el.settings.secret.value = settings.secret || '';
   el.settings.mode.value = settings.editorMode || DEFAULT_SETTINGS.editorMode;
   el.settings.size.value = settings.editorFontSize || DEFAULT_SETTINGS.editorFontSize;
+  el.settings.postOpen.value = settings.postOpenMode || DEFAULT_SETTINGS.postOpenMode;
   el.settings.theme.value = settings.theme || DEFAULT_SETTINGS.theme;
   el.settings.adminMode.value = settings.adminMode || DEFAULT_SETTINGS.adminMode;
 
@@ -4958,6 +5097,7 @@ function saveSettingsFromForm() {
     secret: el.settings.secret.value.trim(),
     editorMode: el.settings.mode.value || DEFAULT_SETTINGS.editorMode,
     editorFontSize: el.settings.size.value || DEFAULT_SETTINGS.editorFontSize,
+    postOpenMode: el.settings.postOpen.value || DEFAULT_SETTINGS.postOpenMode,
     theme: el.settings.theme.value || DEFAULT_SETTINGS.theme,
     style: styleSelection,
     customTheme: readCustomForm(),
@@ -4991,6 +5131,7 @@ function revertSettingsPreview() {
 
   el.settings.theme.value = settings.theme || DEFAULT_SETTINGS.theme;
   el.settings.size.value = settings.editorFontSize || DEFAULT_SETTINGS.editorFontSize;
+  el.settings.postOpen.value = settings.postOpenMode || DEFAULT_SETTINGS.postOpenMode;
   el.settings.adminMode.value = settings.adminMode || DEFAULT_SETTINGS.adminMode;
 
   applyStyle(styleSelection);
@@ -5800,6 +5941,8 @@ function bind() {
         }
       } else if (state.view === 'editor') {
         backToList();
+      } else if (state.view === 'detail') {
+        closeDetail();
       } else if (state.view === 'shuoshuo') {
         show('list');
       } else if (state.view === 'album') {
@@ -5864,6 +6007,12 @@ initAdmin({
   onOpenLinks: openLinks,
   onOpenStats: openStats,
   onOpenCalendar: openCalendar,
+});
+initDetail({
+  onToast: toast,
+  onBack: closeDetail,
+  onEdit: (cid) => openPost(cid),
+  canModerate: () => adminReady(),
 });
 bind();
 

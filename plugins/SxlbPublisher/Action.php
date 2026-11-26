@@ -798,7 +798,9 @@ class Action extends Widget implements ActionInterface
                     min(50, max(1, $this->intParam('size', 20))),
                     (string) $this->param('status', ''),
                     $this->intParam('cid'),
-                    (string) $this->param('keyword', '')
+                    (string) $this->param('keyword', ''),
+                    // 缺省 -1 表示不限；说说详情传 parent=coid，文章详情传 0 只看顶层
+                    $this->intParam('parent', -1)
                 ));
                 break;
             case 'commentApprove':

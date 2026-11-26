@@ -326,6 +326,42 @@
         </main>
       </section>
 
+      <!-- 预览 / 评论：先看成品，再决定是否进编辑器 -->
+      <section id="view-detail" class="view" hidden>
+        <header class="topbar">
+          <button class="text-btn" id="btn-detail-back" type="button">返回</button>
+          <span class="editor-status" id="detail-status">预览</span>
+          <div class="topbar-actions">
+            <button class="text-btn accent" id="btn-detail-edit" type="button" hidden>编辑</button>
+          </div>
+        </header>
+        <main class="detail-body" id="detail-body">
+          <div class="list-loading" id="detail-loading">加载中…</div>
+          <div class="admin-error" id="detail-error" hidden>
+            <p class="empty-title">内容加载失败</p>
+            <p class="empty-desc" id="detail-error-text"></p>
+            <button class="btn ghost small" id="btn-detail-retry" type="button">重试</button>
+          </div>
+          <article id="detail-content" hidden>
+            <h1 class="detail-title" id="detail-title"></h1>
+            <p class="detail-meta" id="detail-meta"></p>
+            <div class="detail-markdown" id="detail-markdown"></div>
+            <section class="detail-comments" id="detail-comments" hidden>
+              <div class="detail-comments-head">
+                <h2 class="detail-comments-title" id="detail-comments-title">
+                  <span id="detail-comments-label">评论</span>
+                  <span class="detail-comment-count" id="detail-comment-count"></span>
+                </h2>
+                <button class="text-btn" id="btn-detail-refresh" type="button">刷新</button>
+              </div>
+              <div id="detail-comment-list"></div>
+              <p class="detail-comment-hint" id="detail-comment-empty" hidden>还没有评论</p>
+              <button class="list-more" id="detail-more" type="button" hidden>加载更多</button>
+            </section>
+          </article>
+        </main>
+      </section>
+
       <!-- 独立页面 -->
       <section id="view-pages" class="view" hidden>
         <header class="topbar">
@@ -576,6 +612,16 @@
                   <option value="normal">标准</option>
                   <option value="large">大</option>
                   <option value="xlarge">特大</option>
+                </select>
+              </div>
+              <div class="field settings-item row">
+                <div class="settings-item-text">
+                  <label class="field-label" for="set-post-open">打开已发布文章</label>
+                  <p class="settings-note">选「直接编辑」时，列表项右侧会出现预览按钮</p>
+                </div>
+                <select id="set-post-open">
+                  <option value="preview">先看预览</option>
+                  <option value="edit">直接编辑</option>
                 </select>
               </div>
             </div>
