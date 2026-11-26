@@ -470,60 +470,91 @@
           <div class="topbar-actions"></div>
         </header>
         <main class="settings-body">
+          <!-- 连接摘要：一眼看清连的是哪台站、配置是否完整 -->
+          <div class="settings-hero">
+            <span class="settings-hero-dot" id="settings-hero-dot" aria-hidden="true"></span>
+            <div class="settings-hero-text">
+              <p class="settings-hero-title" id="settings-hero-title">尚未配置</p>
+              <p class="settings-hero-sub" id="settings-hero-sub">填好服务器地址、Token 与 Secret 后即可写作</p>
+            </div>
+            <span class="settings-hero-version" id="settings-hero-version"></span>
+          </div>
+
           <section class="settings-group">
             <h2 class="settings-group-title">连接</h2>
-            <div class="settings-card">
-              <label class="field">
-                <span class="field-label">服务器地址</span>
-                <input id="set-server" type="url" placeholder="https://blog.sxlb.xyz" autocomplete="off" />
-              </label>
-              <label class="field">
-                <span class="field-label">Token</span>
-                <input id="set-token" type="text" placeholder="X-Sxlb-Token" autocomplete="off" />
-              </label>
-              <label class="field">
-                <span class="field-label">Secret</span>
-                <input id="set-secret" type="text" placeholder="HMAC 密钥" autocomplete="off" />
-              </label>
+            <div class="settings-card settings-list">
+              <div class="field settings-item">
+                <label class="field-label" for="set-server">服务器地址</label>
+                <input
+                  id="set-server"
+                  type="url"
+                  placeholder="https://blog.sxlb.xyz"
+                  autocomplete="off"
+                  inputmode="url"
+                />
+              </div>
+              <div class="field settings-item">
+                <label class="field-label" for="set-token">Token</label>
+                <div class="field-secret">
+                  <input id="set-token" type="password" placeholder="X-Sxlb-Token" autocomplete="off" />
+                  <button class="field-toggle" type="button" data-target="set-token" aria-label="显示 Token">显示</button>
+                </div>
+              </div>
+              <div class="field settings-item">
+                <label class="field-label" for="set-secret">Secret</label>
+                <div class="field-secret">
+                  <input id="set-secret" type="password" placeholder="HMAC 密钥" autocomplete="off" />
+                  <button class="field-toggle" type="button" data-target="set-secret" aria-label="显示 Secret">显示</button>
+                </div>
+              </div>
             </div>
           </section>
 
           <section class="settings-group">
             <h2 class="settings-group-title">写作</h2>
-            <div class="settings-card">
-              <label class="field">
-                <span class="field-label">编辑器模式</span>
+            <div class="settings-card settings-list">
+              <div class="field settings-item row">
+                <div class="settings-item-text">
+                  <label class="field-label" for="set-editor-mode">编辑器模式</label>
+                  <p class="settings-note">写作时可在工具栏随时切换，切换后自动记住</p>
+                </div>
                 <select id="set-editor-mode">
-                  <option value="ir">即时渲染（推荐，边写边渲染）</option>
-                  <option value="wysiwyg">所见即所得（更像 Word，表格可视化编辑）</option>
-                  <option value="sv">分屏预览（左边源码，右边效果）</option>
-                  <option value="code">纯代码（只看 Markdown 源码，点「看成品」预览）</option>
+                  <option value="ir">即时渲染</option>
+                  <option value="wysiwyg">所见即所得</option>
+                  <option value="sv">分屏预览</option>
+                  <option value="code">纯代码</option>
                 </select>
-              </label>
-              <label class="field">
-                <span class="field-label">写作字号</span>
+              </div>
+              <div class="field settings-item row">
+                <div class="settings-item-text">
+                  <label class="field-label" for="set-editor-size">写作字号</label>
+                  <p class="settings-note">只影响正文编辑区，标准为 15.5px</p>
+                </div>
                 <select id="set-editor-size">
-                  <option value="small">小（14px，一屏字多）</option>
-                  <option value="normal">标准（15.5px）</option>
-                  <option value="large">大（17px，久看不累）</option>
-                  <option value="xlarge">特大（19px，长辈友好）</option>
+                  <option value="small">小</option>
+                  <option value="normal">标准</option>
+                  <option value="large">大</option>
+                  <option value="xlarge">特大</option>
                 </select>
-              </label>
+              </div>
             </div>
           </section>
 
           <section class="settings-group">
             <h2 class="settings-group-title">外观</h2>
-            <div class="settings-card">
-              <label class="field">
-                <span class="field-label">外观</span>
+            <div class="settings-card settings-list">
+              <div class="field settings-item row">
+                <div class="settings-item-text">
+                  <label class="field-label" for="set-theme">明暗</label>
+                  <p class="settings-note">跟随系统时随手机的深色模式自动切换</p>
+                </div>
                 <select id="set-theme">
                   <option value="auto">跟随系统</option>
                   <option value="light">浅色</option>
                   <option value="dark">深色</option>
                 </select>
-              </label>
-              <div class="field">
+              </div>
+              <div class="field settings-item">
                 <span class="field-label">界面风格</span>
                 <div class="style-picker" id="set-style">
                   <button class="style-option" type="button" data-style="classic">
@@ -576,29 +607,33 @@
 
           <section class="settings-group">
             <h2 class="settings-group-title">其他</h2>
-            <div class="settings-card">
-              <label class="field">
-                <span class="field-label">管理模式</span>
+            <div class="settings-card settings-list">
+              <div class="field settings-item row">
+                <div class="settings-item-text">
+                  <label class="field-label" for="set-admin-mode">管理模式</label>
+                  <p class="settings-note">开启后「我的」页显示站点管理入口</p>
+                </div>
                 <select id="set-admin-mode">
-                  <option value="off">关闭（首页不显示管理入口）</option>
-                  <option value="on">开启（可查看概览与插件配置）</option>
+                  <option value="off">关闭</option>
+                  <option value="on">开启</option>
                 </select>
-              </label>
+              </div>
             </div>
           </section>
 
-          <div class="settings-actions">
+          <div class="settings-meta">
+            <span class="settings-meta-version" id="app-version">当前版本</span>
+            <button class="text-btn accent" id="btn-check-update" type="button">检查更新</button>
+          </div>
+          <p class="settings-hint">
+            Token 与 Secret 在博客后台「插件 → SxlbPublisher 设置」中查看，密钥只保存在本机。
+          </p>
+
+          <!-- 底部动作条：滚动时始终可见，不用翻到最后才能保存 -->
+          <div class="settings-footer">
             <button class="btn ghost" id="btn-test">测试连接</button>
             <button class="btn primary" id="btn-save-settings">保存设置</button>
           </div>
-          <div class="update-row">
-            <span class="update-version" id="app-version">当前版本</span>
-            <button class="btn ghost small" id="btn-check-update">检查更新</button>
-          </div>
-          <p class="settings-hint">
-            Token 与 Secret 在博客后台「插件 → SxlbPublisher 设置」中查看。密钥只保存在本机。<br />
-            这里设置的是默认模式；写作时也可以点工具栏「编辑模式」随时切换，切换后会自动记住，正文不会丢。
-          </p>
         </main>
       </section>
     </div>

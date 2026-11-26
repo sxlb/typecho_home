@@ -1669,59 +1669,231 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px 16px calc(40px + env(safe-area-inset-bottom));
+  padding: 16px 16px 0;
 }
 
-/* 设置分组：标题 + 卡片，替代原来一长串 field */
-.settings-group {
-  margin-bottom: 20px;
-}
-
-.settings-group-title {
-  margin: 0 4px 8px;
-  color: var(--ink-3);
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-}
-
-.settings-card {
-  padding: 14px 16px 2px;
+/* 顶部连接摘要：站点与配置状态的第一落点 */
+.settings-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+  padding: 15px 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
 }
 
-.settings-card .field:last-child {
-  margin-bottom: 12px;
+.settings-hero-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 1.5px dashed var(--ink-3);
+  border-radius: 50%;
 }
 
-.settings-card.custom-theme {
-  margin-bottom: 0;
-  padding: 14px 16px;
-  border-radius: var(--radius);
+/* 配置完整时点亮为实心主色，并留一圈柔光 */
+.settings-hero-dot.ready {
+  border: 0;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
 }
 
-.settings-card.custom-theme .settings-hint {
-  margin-bottom: 0;
-}
-
-.settings-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 8px;
-}
-
-.settings-actions .btn {
+.settings-hero-text {
   flex: 1;
+  min-width: 0;
+}
+
+.settings-hero-title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-hero-sub {
+  margin: 3px 0 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-hero-version {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--ink-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-group {
+  margin-bottom: 22px;
+}
+
+/* 分组标题加一条主色短竖线，替代原来靠字距区分的中文标题 */
+.settings-group-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 2px 9px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.settings-group-title::before {
+  content: '';
+  flex: none;
+  width: 2px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+.settings-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+/* 列表型卡片：行之间用分隔线，比整块 margin 堆叠更整齐 */
+.settings-list {
+  padding: 0 15px;
+}
+
+.settings-list .field {
+  margin-bottom: 0;
+  padding: 13px 0;
+}
+
+.settings-list .field + .field {
+  border-top: 1px solid var(--line);
+}
+
+/* 左文字右控件：适合取值短的下拉项 */
+.settings-list .field.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.settings-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-note {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.settings-list .field.row select {
+  width: auto;
+  max-width: 140px;
+  padding: 9px 10px;
+  font-size: 13.5px;
+}
+
+/* 密钥输入：右侧「显示 / 隐藏」切换 */
+.field-secret {
+  position: relative;
+}
+
+.field-secret input {
+  padding-right: 62px;
+}
+
+.field-toggle {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  transform: translateY(-50%);
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.field-toggle:active {
+  background: var(--accent-soft);
+}
+
+.settings-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 2px 0;
+}
+
+.settings-meta-version {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .settings-hint {
-  margin: 18px 2px 0;
+  margin: 12px 2px 0;
+  color: var(--ink-3);
   font-size: 12px;
   line-height: 1.7;
-  color: var(--ink-3);
+}
+
+/* 底部动作条：滚动时固定可见，上方用渐变遮住穿出的内容 */
+.settings-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  gap: 10px;
+  margin: 16px -16px 0;
+  padding: 14px 16px calc(14px + env(safe-area-inset-bottom));
+  background: var(--bg);
+}
+
+.settings-footer::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  height: 22px;
+  background: linear-gradient(to top, var(--bg), transparent);
+  pointer-events: none;
+}
+
+/* 顶边细线：滚动时把「动作条」和内容分开，避免视觉上连成一片 */
+.settings-footer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--line);
+}
+
+.settings-footer .btn {
+  flex: 1;
 }
 
 /* ─── 表单 ─────────────────────────────────────────────── */
@@ -1734,10 +1906,10 @@ body {
 }
 
 .field-label {
+  color: var(--ink-2);
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.03em;
-  color: var(--ink-2);
 }
 
 .field input,
@@ -1760,6 +1932,12 @@ body {
   line-height: 1.6;
 }
 
+/* 占位文字用主题灰：浏览器默认色在深色底下对比只有 3.3:1 */
+.field input::placeholder,
+.field textarea::placeholder {
+  color: var(--ink-3);
+}
+
 .field input:focus,
 .field textarea:focus,
 .field select:focus {
@@ -1777,11 +1955,54 @@ body {
   min-width: 0;
 }
 
+/* 取色器与滑杆统一成圆角质感，避免浏览器默认外观破坏卡片观感 */
+.field input[type='color'] {
+  height: 40px;
+  padding: 3px;
+  cursor: pointer;
+}
+
+.field input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.field input[type='color']::-webkit-color-swatch {
+  border: 0;
+  border-radius: 7px;
+}
+
+.field input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.field input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.field input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgba(27, 26, 24, 0.22);
+}
+
 /* 界面风格选择 */
 .style-picker {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
+  margin-top: 2px;
 }
 
 @media (max-width: 420px) {
@@ -1793,16 +2014,17 @@ body {
 .style-option {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 7px;
-  padding: 10px;
+  padding: 8px 8px 9px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 11px;
   background: var(--field);
   color: var(--ink-2);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 1;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .style-option.active {
@@ -1810,46 +2032,42 @@ body {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
+/* 色带代替三个小方点：更像一张缩小的界面预览 */
 .style-swatches {
   display: flex;
-  gap: 3px;
+  height: 24px;
+  border-radius: 7px;
+  overflow: hidden;
 }
 
 .style-swatches i {
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  flex: 1;
+  height: 100%;
+}
+
+.style-swatches i:first-child {
+  flex: 1.4;
+}
+
+/* 深色下 --line 与卡片底色太接近，风格卡的边框几乎看不见，单独提亮 */
+:root[data-theme='dark'] .style-option:not(.active) {
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 /* 自定义主题 */
-.custom-theme {
+.settings-card.custom-theme {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding: 14px;
-  border: 1px dashed var(--line);
-  border-radius: 12px;
+  gap: 14px;
+  margin-top: 10px;
+  padding: 14px 15px;
 }
 
 .custom-theme .field {
   margin-bottom: 0;
-}
-
-.custom-theme input[type='color'] {
-  height: 42px;
-  padding: 4px;
-  cursor: pointer;
-}
-
-.custom-theme input[type='range'] {
-  padding: 0;
-  border: none;
-  background: transparent;
-  accent-color: var(--accent);
 }
 
 .custom-theme .settings-hint {
@@ -2295,23 +2513,6 @@ body.modal-open #view-editor .vditor-sv {
 
 .item-action.danger {
   color: #b5453b;
-}
-
-/* ─── 关于更新 ─────────────────────────────────────────── */
-
-.update-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.update-version {
-  font-size: 13px;
-  color: var(--ink-3);
 }
 
 /* ─── 主题元素弹窗 ─────────────────────────────────────── */

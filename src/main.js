@@ -175,6 +175,10 @@ const el = {
     server: $('#set-server'),
     token: $('#set-token'),
     secret: $('#set-secret'),
+    heroDot: $('#settings-hero-dot'),
+    heroTitle: $('#settings-hero-title'),
+    heroSub: $('#settings-hero-sub'),
+    heroVersion: $('#settings-hero-version'),
     mode: $('#set-editor-mode'),
     size: $('#set-editor-size'),
     theme: $('#set-theme'),
@@ -4818,8 +4822,35 @@ function openSettings() {
   el.settings.custom.hidden = styleSelection !== 'custom';
   applyStyle(styleSelection);
 
+  syncSettingsHero();
   renderVersion();
   show('settings');
+}
+
+/**
+ * 顶部连接摘要
+ *
+ * 跟随表单实时变化，而不是只读已保存的设置：
+ * 用户边填边能看到「还差什么」，不用先保存再回来看。
+ */
+function syncSettingsHero() {
+  const server = el.settings.server.value.trim();
+  const ready = Boolean(server && el.settings.token.value.trim() && el.settings.secret.value.trim());
+
+  let host = '';
+
+  try {
+    host = server ? new URL(server).host : '';
+  } catch {
+    // 还没填完整时 new URL 会抛错，退回字符串粗提取
+    host = server.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  }
+
+  el.settings.heroDot.classList.toggle('ready', ready);
+  el.settings.heroTitle.textContent = ready ? host || '配置已填写' : '尚未配置';
+  el.settings.heroSub.textContent = ready
+    ? '配置完整，可以开始写作'
+    : '填好服务器地址、Token 与 Secret 后即可写作';
 }
 
 function syncStylePicker() {
@@ -4842,6 +4873,10 @@ function renderVersion() {
   el.appVersion.textContent = latest
     ? `当前 v${APP_VERSION}，最新 v${latest}`
     : `当前版本 v${APP_VERSION}`;
+
+  if (el.settings.heroVersion) {
+    el.settings.heroVersion.textContent = `v${APP_VERSION}`;
+  }
 }
 
 async function testConnection() {
@@ -5408,6 +5443,27 @@ function bind() {
     customPreview = readCustomForm();
     el.settings.radiusValue.textContent = String(customPreview.radius);
     applyCustomTheme(customPreview);
+  });
+
+  // 连接摘要跟随输入实时变化
+  [el.settings.server, el.settings.token, el.settings.secret].forEach((input) => {
+    input.addEventListener('input', syncSettingsHero);
+  });
+
+  // 密钥默认打码，点「显示」临时查看
+  document.querySelectorAll('.field-toggle').forEach((button) => {
+    button.addEventListener('click', () => {
+      const input = document.getElementById(button.dataset.target);
+
+      if (!input) {
+        return;
+      }
+
+      const reveal = input.type === 'password';
+      input.type = reveal ? 'text' : 'password';
+      button.textContent = reveal ? '隐藏' : '显示';
+      button.setAttribute('aria-label', `${reveal ? '隐藏' : '显示'} ${button.dataset.target === 'set-token' ? 'Token' : 'Secret'}`);
+    });
   });
 
   // 发布检查清单：展开/收起，字段改动后自动重算
