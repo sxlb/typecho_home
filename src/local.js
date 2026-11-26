@@ -40,9 +40,32 @@ export function readDraft(key) {
 
 /**
  * 比较草稿内容是否一致（忽略 updatedAt）
+ *
+ * 字段必须覆盖 persistLocal 写入的全部键：漏掉任何一项，
+ * 只改这项时 updatedAt 不会刷新，本地改动会被判成「旧草稿」而丢弃。
  */
 function sameContent(a, b) {
-  const fields = ['cid', 'title', 'text', 'tags', 'summary', 'thumb', 'reprint', 'slug', 'created'];
+  const fields = [
+    'cid',
+    'kind',
+    'title',
+    'text',
+    'tags',
+    'summary',
+    'album',
+    'imagePost',
+    'thumb',
+    'reprint',
+    'pinned',
+    'slug',
+    'created',
+    // 独立页面的设置项
+    'template',
+    'status',
+    'order',
+    'allowComment',
+    'originalSlug',
+  ];
 
   if (fields.some((field) => String(a[field] ?? '') !== String(b[field] ?? ''))) {
     return false;

@@ -745,13 +745,20 @@ function renderList() {
   drafts.forEach((draft) => {
     entries.push({
       at: (draft.updatedAt || Date.now()) / 1000,
-      pinned: false,
+      // 本地草稿同样尊重置顶开关，否则勾了置顶却仍落在「今天」分组
+      pinned: Boolean(draft.pinned),
       node: createItem({
         key: draft.id,
         title: draft.title || '未命名草稿',
         time: formatDate((draft.updatedAt || Date.now()) / 1000),
         status: 'local',
-        item: { local: true, id: draft.id, title: draft.title, text: draft.text },
+        item: {
+          local: true,
+          id: draft.id,
+          title: draft.title,
+          text: draft.text,
+          pinned: Boolean(draft.pinned),
+        },
       }),
     });
   });
@@ -856,11 +863,12 @@ function updateListHeader() {
   el.listCount.textContent = total ? `${total}${suffix}` : '';
 }
 
-/** 文章列表只有标题与缩略名：两者都一致时视为「只是打开过」，不再标「本地有改动」 */
+/** 文章列表只有标题、缩略名与置顶：都一致时视为「只是打开过」，不再标「本地有改动」 */
 function postDraftSummaryDiffers(draft, item) {
   return (
     String(draft.title ?? '') !== String(item.title ?? '') ||
-    String(draft.slug ?? '') !== String(item.slug ?? '')
+    String(draft.slug ?? '') !== String(item.slug ?? '') ||
+    Boolean(draft.pinned) !== Boolean(item.pinned)
   );
 }
 
@@ -1328,12 +1336,15 @@ function albumCategoryMid() {
 /**
  * 「相册描述」只在文章属于相册分类时出现
  *
- * 已有文章以服务端 imagePost 为准，新建 / 本地草稿看选中的分类；
- * 隐藏时清空输入，避免把其他文章的旧描述带过去。
+ * 分类元数据加载完成后，一律以当前选中的分类为准：把文章从相册分类移走后，
+ * 字段要立刻隐藏，不能再用打开时的 imagePost 快照兜底，否则旧描述会被继续提交。
+ * 元数据还没加载时（首次进入编辑器）才退回服务端返回的 imagePost。
  */
 function syncAlbumField() {
   const mid = albumCategoryMid();
-  const isAlbum = state.imagePost || (mid > 0 && state.selectedMids.has(mid));
+  const isAlbum = state.metasLoaded
+    ? mid > 0 && state.selectedMids.has(mid)
+    : Boolean(state.imagePost);
 
   el.albumField.hidden = !isAlbum;
 
@@ -1469,6 +1480,10 @@ function renderCategoryChips() {
         state.selectedMids.add(category.mid);
       }
       chip.classList.toggle('active');
+      // 同步 imagePost 快照：本地草稿在分类元数据未加载时靠它还原相册字段，
+      // 不跟随选择更新的话，取消相册分类后旧快照会一直生效
+      const albumMid = albumCategoryMid();
+      state.imagePost = albumMid > 0 && state.selectedMids.has(albumMid);
       syncAlbumField();
       refreshCheck();
       markDirty();
@@ -4640,11 +4655,12 @@ async function submit(isDraft) {
     state.metasLoaded = false;
 
     removeDraft(previousKey);
-    removeDraft(String(previousKey));
     removeDraft(String(result.cid));
 
     closeSheet();
     destroyEditor();
+    // 提交成功后停掉待执行的自动保存，避免状态栏在离开编辑器后又被改写
+    clearTimeout(state.autosaveTimer);
     state.draftKey = '';
 
     // 从相册 / 日历进入的编辑，保存后回来源视图并刷新，而不是跳回首页列表

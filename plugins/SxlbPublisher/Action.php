@@ -27,10 +27,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
 /**
  * 接口分发与鉴权
  *
- * 所有请求都必须带三个请求头：
+ * 所有请求都必须带四个请求头：
  *   X-Sxlb-Token  客户端标识
  *   X-Sxlb-Ts     Unix 秒
- *   X-Sxlb-Sign   HMAC_SHA256(secret, ts + "\n" + path + "\n" + rawBody)
+ *   X-Sxlb-Nonce  一次性随机串（32 位十六进制，防重放）
+ *   X-Sxlb-Sign   HMAC_SHA256(secret, ts + "\n" + nonce + "\n" + path + "\n" + rawBody)
  *
  * 未通过签名校验的请求一律 401，不区分 token 错误与签名错误，避免被探测。
  */
