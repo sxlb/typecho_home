@@ -131,21 +131,13 @@
             <button class="btn ghost small" id="btn-admin-retry" type="button">重试</button>
           </div>
           <div id="admin-overview" hidden>
-            <!-- 分段：一次只显示一类，避免概览 + 内容 + 站点 + 插件堆在一屏 -->
+            <!-- 统计图表已在「我的」页常驻，这里只分段展示管理操作 -->
             <div class="admin-tabs" id="admin-tabs" role="tablist" aria-label="管理分类">
-              <button class="admin-tab active" type="button" role="tab" aria-selected="true" data-tab="summary">概览</button>
-              <button class="admin-tab" type="button" role="tab" aria-selected="false" data-tab="content">内容</button>
+              <button class="admin-tab active" type="button" role="tab" aria-selected="true" data-tab="content">内容</button>
               <button class="admin-tab" type="button" role="tab" aria-selected="false" data-tab="site">站点</button>
               <button class="admin-tab" type="button" role="tab" aria-selected="false" data-tab="plugins">插件</button>
             </div>
-            <div class="admin-panel" data-panel="summary">
-              <p class="admin-site" id="admin-site"></p>
-              <div class="stat-grid" id="admin-stats"></div>
-              <p class="settings-hint">
-                管理接口需在博客后台「插件 → SxlbPublisher 设置」中开启；这里的「管理模式」只控制 App 是否显示入口。
-              </p>
-            </div>
-            <div class="admin-panel" data-panel="content" hidden>
+            <div class="admin-panel" data-panel="content">
               <div id="admin-content"></div>
             </div>
             <div class="admin-panel" data-panel="site" hidden>
@@ -278,16 +270,42 @@
             </div>
           </div>
 
-          <div class="settings-group">
-            <h2 class="settings-group-title">站点</h2>
+          <!-- 站点概览：一进「我的」就能看到数据，不用再多点一层 -->
+          <section class="me-overview">
+            <div class="me-overview-head">
+              <h2 class="settings-group-title">站点概览</h2>
+              <span class="me-site" id="me-site"></span>
+            </div>
+            <div class="stat-grid" id="me-stats"></div>
+            <p class="me-hint" id="me-stats-hint" hidden>
+              先在设置里开启「管理模式」，并确认插件已打开管理接口
+            </p>
+          </section>
+
+          <div class="settings-group" id="me-admin-group" hidden>
+            <h2 class="settings-group-title">管理</h2>
             <div class="settings-card me-links">
-              <button class="me-link" type="button" id="me-admin">
-                <span>站点管理</span>
+              <button class="me-link" type="button" id="me-content">
+                <span class="me-link-text">
+                  <span class="me-link-title">内容</span>
+                  <span class="me-link-desc">独立页面 · 友情链接 · 发布日历 · 评论 · 媒体 · 分类标签</span>
+                </span>
                 <span class="me-arrow">›</span>
               </button>
-              <p class="me-hint" id="me-admin-hint" hidden>
-                先在设置里开启「管理模式」，并确认插件已打开管理接口
-              </p>
+              <button class="me-link" type="button" id="me-site-admin">
+                <span class="me-link-text">
+                  <span class="me-link-title">站点</span>
+                  <span class="me-link-desc">基本 · 阅读 · 评论 · 永久链接 · 主题 · 缓存</span>
+                </span>
+                <span class="me-arrow">›</span>
+              </button>
+              <button class="me-link" type="button" id="me-plugins">
+                <span class="me-link-text">
+                  <span class="me-link-title">插件</span>
+                  <span class="me-link-desc">启用、停用与配置</span>
+                </span>
+                <span class="me-arrow">›</span>
+              </button>
             </div>
           </div>
 
@@ -295,11 +313,10 @@
             <h2 class="settings-group-title">应用</h2>
             <div class="settings-card me-links">
               <button class="me-link" type="button" id="me-settings">
-                <span>设置</span>
-                <span class="me-arrow">›</span>
-              </button>
-              <button class="me-link" type="button" id="me-update">
-                <span>检查更新</span>
+                <span class="me-link-text">
+                  <span class="me-link-title">设置</span>
+                  <span class="me-link-desc">连接、写作、外观与更新</span>
+                </span>
                 <span class="me-arrow">›</span>
               </button>
             </div>

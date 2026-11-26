@@ -20,8 +20,10 @@ const el = {
   errorText: $('#admin-error-text'),
   overview: $('#admin-overview'),
   tabs: $('#admin-tabs'),
-  siteName: $('#admin-site'),
-  stats: $('#admin-stats'),
+  // 统计已移到「我的」页常驻显示
+  siteName: $('#me-site'),
+  stats: $('#me-stats'),
+  statsHint: $('#me-stats-hint'),
   content: $('#admin-content'),
   entries: $('#admin-entries'),
   plugins: $('#admin-plugins'),
@@ -44,6 +46,7 @@ const state = {
   tool: null, // { kind: 'comments' | 'media', status, page, items, total, busy }
   loaded: false,
   busy: false,
+  statsBusy: false,
   pendingOff: '',
   pendingTimer: 0,
 };
@@ -89,16 +92,66 @@ export function initAdmin(options = {}) {
 
 /**
  * 打开管理页并拉取数据
+ *
+ * @param {'content'|'site'|'plugins'} [tab] 初始分段，由「我的」页的二级入口决定
  */
-export async function openAdmin() {
+export async function openAdmin(tab = 'content') {
   if (state.busy) {
     return;
   }
 
   showList();
-  // 每次进入都从概览开始，避免停在上次的插件或站点分段
-  switchTab('summary');
+  switchTab(tab);
   await load();
+}
+
+/**
+ * 管理模式开关：控制「我的」页的管理入口与概览区
+ *
+ * @param {boolean} enabled 是否可用（本地开关开启且已配置服务器）
+ * @param {string} [reason] 不可用时的提示文案
+ */
+export function setAdminEnabled(enabled, reason = '') {
+  const group = $('#me-admin-group');
+
+  if (group) {
+    group.hidden = !enabled;
+  }
+
+  if (!enabled) {
+    if (el.siteName) {
+      el.siteName.hidden = true;
+    }
+
+    showStatsHint(reason);
+    return;
+  }
+
+  hideStatsHint();
+}
+
+/**
+ * 「我的」页的概览统计：只拉 overview，不渲染管理页容器
+ *
+ * 失败时保留上次数据并显示提示，不打断「我的」页其他入口。
+ */
+export async function refreshMeStats() {
+  if (state.statsBusy) {
+    return;
+  }
+
+  state.statsBusy = true;
+
+  try {
+    const data = await callAdmin('overview');
+    state.overview = data || {};
+    renderStats(state.overview);
+    hideStatsHint();
+  } catch (error) {
+    showStatsHint(`概览加载失败：${error.message}`);
+  } finally {
+    state.statsBusy = false;
+  }
 }
 
 /**
@@ -179,7 +232,7 @@ function showList() {
 /**
  * 切换管理页分段
  *
- * @param {'summary'|'content'|'site'|'plugins'} name
+ * @param {'content'|'site'|'plugins'} name
  */
 function switchTab(name) {
   el.tabs?.querySelectorAll('.admin-tab').forEach((button) => {
@@ -208,11 +261,13 @@ function showError(message) {
 // ─── 概览 ────────────────────────────────────────────────────────────────
 
 function renderStats(data) {
-  // 站点名作为概览段的标题，让人一眼知道在看哪个站
+  // 站点名放在「我的」页概览标题右侧，一眼知道在看哪个站
   if (el.siteName) {
     el.siteName.textContent = data.site || '';
     el.siteName.hidden = !data.site;
   }
+
+  hideStatsHint();
 
   const items = [
     { label: '已发布', value: data.posts },
@@ -252,6 +307,32 @@ function renderStats(data) {
 
     el.stats.appendChild(card);
   });
+}
+
+/**
+ * 统计加载失败时在「我的」页给出提示，说明入口为何没显示
+ *
+ * @param {string} [message]
+ */
+function showStatsHint(message) {
+  if (!el.statsHint) {
+    return;
+  }
+
+  el.statsHint.textContent = message
+    || '先在设置里开启「管理模式」，并确认插件已打开管理接口';
+  el.statsHint.hidden = false;
+  el.stats.hidden = true;
+}
+
+function hideStatsHint() {
+  if (el.statsHint) {
+    el.statsHint.hidden = true;
+  }
+
+  if (el.stats) {
+    el.stats.hidden = false;
+  }
 }
 
 // ─── 设置入口 ────────────────────────────────────────────────────────────

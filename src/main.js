@@ -8,7 +8,7 @@ import {
   destroyEditor,
   closeEditorSheets,
 } from './editor.js';
-import { initAdmin, openAdmin, handleAdminBack } from './admin.js';
+import { initAdmin, openAdmin, handleAdminBack, refreshMeStats, setAdminEnabled } from './admin.js';
 import {
   newDraftId,
   readDraft,
@@ -53,8 +53,6 @@ const el = {
   tabbar: $('#tabbar'),
   meServer: $('#me-server'),
   meVersion: $('#me-version'),
-  meAdmin: $('#me-admin'),
-  meAdminHint: $('#me-admin-hint'),
   listLoading: $('#list-loading'),
   listSkeleton: $('#list-skeleton'),
   listEmpty: $('#list-empty'),
@@ -320,7 +318,7 @@ function switchTab(view) {
   }
 }
 
-/** 「我的」：服务器、站点管理入口、设置与版本 */
+/** 「我的」：账号卡、站点概览、管理入口、设置与版本 */
 function openMe() {
   const settings = getSettings();
 
@@ -336,6 +334,11 @@ function openMe() {
 
   applyAdminEntry();
   show('me');
+
+  // 概览统计常驻「我的」页，进页即刷新；未开启管理模式时不发请求
+  if (adminReady(settings)) {
+    refreshMeStats();
+  }
 }
 
 function toast(message) {
@@ -405,18 +408,34 @@ function applyFontSize(value = getSettings().editorFontSize) {
 }
 
 /**
- * 管理模式入口：「我的」页里的站点管理按钮，服务端还有独立的管理接口开关
+ * 管理模式是否可用：本地开关 + 已配置服务器
+ *
+ * @param {object} [settings]
+ * @returns {boolean}
+ */
+function adminReady(settings = getSettings()) {
+  const enabled = (settings.adminMode || DEFAULT_SETTINGS.adminMode) === 'on';
+  return enabled && Boolean(String(settings.server || '').trim());
+}
+
+/**
+ * 管理模式入口：「我的」页里的内容 / 站点 / 插件三个二级入口
+ *
+ * 服务端还有独立的管理接口开关，这里只控制 App 内入口是否可见。
  */
 function applyAdminEntry() {
-  const enabled = (getSettings().adminMode || DEFAULT_SETTINGS.adminMode) === 'on';
+  const settings = getSettings();
+  const enabled = (settings.adminMode || DEFAULT_SETTINGS.adminMode) === 'on';
+  const ready = adminReady(settings);
+  let reason = '';
 
-  if (el.meAdmin) {
-    el.meAdmin.hidden = !enabled;
+  if (!enabled) {
+    reason = '先在设置里开启「管理模式」，并确认插件已打开管理接口';
+  } else if (!ready) {
+    reason = '先在设置里填写博客地址，再查看站点数据';
   }
 
-  if (el.meAdminHint) {
-    el.meAdminHint.hidden = enabled;
-  }
+  setAdminEnabled(ready, reason);
 }
 
 // ─── 界面风格 ────────────────────────────────────────────────────────────
@@ -5337,17 +5356,18 @@ function bind() {
     }
   });
 
-  // 「我的」页入口
-  $('#me-admin').addEventListener('click', () => {
-    show('admin');
-    openAdmin();
+  // 「我的」页入口：内容 / 站点 / 插件三个二级入口分别直达对应分段
+  [
+    ['#me-content', 'content'],
+    ['#me-site-admin', 'site'],
+    ['#me-plugins', 'plugins'],
+  ].forEach(([selector, tab]) => {
+    $(selector).addEventListener('click', () => {
+      show('admin');
+      openAdmin(tab);
+    });
   });
   $('#me-settings').addEventListener('click', openSettings);
-  $('#me-update').addEventListener('click', async () => {
-    // 「我的」页也能直接升级：先切到设置页展示更新面板，再开始下载
-    openSettings();
-    await checkUpdate({ manual: true });
-  });
   $('#btn-shuoshuo-refresh').addEventListener('click', () => loadShuoshuo({ reset: true }));
   $('#btn-shuoshuo-new').addEventListener('click', () => openShuoshuoSheet());
   $('#shuoshuo-sheet-close').addEventListener('click', closeShuoshuoSheet);
