@@ -4894,7 +4894,8 @@ async function testConnection() {
 
   try {
     const data = await call('ping');
-    toast(`已连接：${data.site}`);
+    // 测试连接需要请求带上配置，所以这里会顺手保存；在提示里说清楚
+    toast(`连接成功：${data.site}，配置已保存`);
   } catch (error) {
     toast(error.message);
   }
@@ -4940,33 +4941,57 @@ function saveSettingsFromForm() {
 }
 
 /**
- * 离开设置页：保存 → 校验 → 按来源返回
+ * 回滚设置页的即时预览
+ *
+ * 主题 / 字号 / 风格在设置页里点了就立即生效，但那只是预览。
+ * 现在只有点「保存设置」才写入，离开时要把这些预览恢复成已保存的样子，
+ * 否则回到列表会看到一套其实没被保存的样式。
+ */
+function revertSettingsPreview() {
+  const settings = getSettings();
+
+  styleSelection = settings.style || DEFAULT_SETTINGS.style;
+  customPreview = null;
+
+  el.settings.theme.value = settings.theme || DEFAULT_SETTINGS.theme;
+  el.settings.size.value = settings.editorFontSize || DEFAULT_SETTINGS.editorFontSize;
+  el.settings.adminMode.value = settings.adminMode || DEFAULT_SETTINGS.adminMode;
+
+  applyStyle(styleSelection);
+  applyTheme(settings.theme);
+  applyFontSize(settings.editorFontSize);
+  applyAdminEntry();
+}
+
+/**
+ * 离开设置页：不写入任何改动，仅在已保存配置不完整时拦截
+ *
+ * 「返回」不再隐式保存——只有点「保存设置」才落盘，
+ * 避免用户只是看了眼设置、退回列表，配置就被悄悄改了。
  *
  * @param {{allowExit?: boolean}} [options] allowExit 为真且表单全空时允许退出 App
  */
 function leaveSettings({ allowExit = false } = {}) {
-  const result = saveSettingsFromForm();
+  const settings = getSettings();
 
-  if (!result.ok) {
-    toast(result.message);
-    return;
-  }
-
-  if (!isConfigured()) {
-    const blank =
-      !el.settings.server.value.trim() &&
-      !el.settings.token.value.trim() &&
-      !el.settings.secret.value.trim();
+  if (!isConfigured(settings)) {
+    const server = el.settings.server.value.trim();
+    const token = el.settings.token.value.trim();
+    const secret = el.settings.secret.value.trim();
+    const blank = !server && !token && !secret;
 
     if (allowExit && blank) {
       App.exitApp();
       return;
     }
 
-    toast('请先填写服务器地址、Token 与 Secret');
+    // 已经填了但没存：引导去点保存；完全没填：说明缺哪几项
+    toast(blank ? '请先填写服务器地址、Token 与 Secret' : '配置尚未保存，请点下方「保存设置」');
     show('settings');
     return;
   }
+
+  revertSettingsPreview();
 
   if (state.settingsFrom === 'me') {
     openMe();
@@ -5408,15 +5433,17 @@ function bind() {
 
     // 保存后留在设置页；列表在「返回」时统一加载，
     // 避免列表请求失败的网络提示覆盖「设置已保存」
+    // 预览对象已经落盘，清掉后 currentCustomTheme() 直接读已保存值
+    customPreview = null;
     toast('设置已保存');
   });
   $('#btn-check-update').addEventListener('click', () => checkUpdate(true));
 
-  // 外观切换即时预览，点「保存设置」或返回时一并落盘
+  // 外观切换即时预览，但目前只是预览：不点「保存设置」离开会回滚
   el.settings.theme.addEventListener('change', () => applyTheme(el.settings.theme.value));
   el.settings.size.addEventListener('change', () => applyFontSize(el.settings.size.value));
 
-  // 界面风格：点一下立即换肤，保存或返回时落盘
+  // 界面风格：点一下立即换肤，同样需要点「保存设置」才生效到下次启动
   el.settings.style.addEventListener('click', (event) => {
     const button = event.target.closest('[data-style]');
 
