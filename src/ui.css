@@ -1599,7 +1599,8 @@ body {
 .editor-tool-toggle {
   position: absolute;
   right: 10px;
-  bottom: 58px;
+  /* 悬浮在工具栏上方：高度由 JS 测量工具栏写入，避免盖住按钮 */
+  bottom: calc(var(--editor-toolbar-height, 92px) + 8px);
   z-index: 12;
   display: grid;
   place-items: center;

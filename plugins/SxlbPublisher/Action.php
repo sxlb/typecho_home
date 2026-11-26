@@ -711,7 +711,8 @@ class Action extends Widget implements ActionInterface
     {
         switch ($sub) {
             case 'overview':
-                $this->ok(Admin::overview(Db::get()));
+                // 传站长 UID：概览统计评论时要排除时光机的说说本身
+                $this->ok(Admin::overview(Db::get(), max(1, (int) ($this->config->authorId ?? 1))));
                 break;
             case 'metas':
                 // 管理工具页的分类 / 标签列表（写作接口的 metas 不带管理开关校验）

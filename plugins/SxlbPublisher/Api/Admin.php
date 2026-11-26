@@ -38,13 +38,13 @@ class Admin
      *
      * @return array{posts:int,drafts:int,comments:int,pendingComments:int,media:int,site:string,time:int}
      */
-    public static function overview(Db $db): array
+    public static function overview(Db $db, int $ownerId = 0): array
     {
         return [
             'posts' => self::countContents($db, 'post', 'publish'),
             'drafts' => self::countContents($db, 'post_draft'),
-            'comments' => self::countComments($db),
-            'pendingComments' => self::countComments($db, 'waiting'),
+            'comments' => self::countComments($db, null, $ownerId),
+            'pendingComments' => self::countComments($db, 'waiting', $ownerId),
             'media' => self::countContents($db, 'attachment'),
             'categories' => self::countMetas($db, 'category'),
             'tags' => self::countMetas($db, 'tag'),
@@ -1521,12 +1521,29 @@ class Admin
         return (int) ($row->num ?? 0);
     }
 
-    private static function countComments(Db $db, ?string $status = null): int
+    /**
+     * 统计评论数
+     *
+     * 时光机的说说本身也是 comments 里站长发的顶层记录，
+     * 概览只算「评论」：排除时光机页面下站长的顶层说说，说说下的回复照常计入。
+     */
+    private static function countComments(Db $db, ?string $status = null, int $ownerId = 0): int
     {
         $query = $db->select(['COUNT(table.comments.coid)' => 'num'])->from('table.comments');
 
         if ($status !== null) {
             $query->where('status = ?', $status);
+        }
+
+        $crossId = Shuoshuo::pageId($db);
+        $ownerId = max(1, $ownerId);
+
+        if ($crossId > 0) {
+            $query->where(
+                'NOT (table.comments.cid = ? AND table.comments.parent = 0 AND table.comments.authorId = ?)',
+                $crossId,
+                $ownerId
+            );
         }
 
         $row = $db->fetchObject($query);

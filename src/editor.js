@@ -1679,7 +1679,11 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onMo
     },
     input: (text) => onChange?.(text),
     // 首次渲染完成后同步模式相关的按钮与样式
-    after: () => syncModeUi(mode),
+    after: () => {
+      syncModeUi(mode);
+      // 工具栏此时才真正挂到 DOM，重新量一次高度，悬浮按钮才不会压住它
+      bindToolbarToggle();
+    },
     upload: {
       accept: 'image/*',
       // 相册多选：粘贴 / 拖拽的图片也走同一个 handler
@@ -1694,6 +1698,9 @@ export function initEditor({ value, mode = 'ir', onChange, getCid, onError, onMo
 }
 
 const TOOLBAR_KEY = 'sxlb.editorToolbarCollapsed';
+// 工具栏高度观察器：尺寸变化时同步给悬浮按钮，避免按钮压住工具栏
+let toolbarObserver = null;
+let observedToolbar = null;
 
 /**
  * 底部工具栏的收起 / 展开
@@ -1712,11 +1719,33 @@ function bindToolbarToggle() {
   wrap.classList.toggle('toolbar-collapsed', collapsed);
   toggle.setAttribute('aria-label', collapsed ? '展开工具栏' : '收起工具栏');
 
+  // 工具栏高度随屏幕宽度 / 字号变化，实时量出来给悬浮按钮定位。
+  // Vditor 的工具栏可能晚于 initEditor 才渲染，所以每次同步都重新查询节点。
+  const syncToolbarHeight = () => {
+    const bar = document.querySelector('#editor .vditor-toolbar');
+
+    wrap.style.setProperty('--editor-toolbar-height', `${bar ? bar.offsetHeight : 0}px`);
+
+    if (bar && bar !== observedToolbar && typeof ResizeObserver === 'function') {
+      toolbarObserver?.disconnect();
+      toolbarObserver = new ResizeObserver(syncToolbarHeight);
+      toolbarObserver.observe(bar);
+      observedToolbar = bar;
+    }
+  };
+
+  toolbarObserver?.disconnect();
+  toolbarObserver = null;
+  observedToolbar = null;
+
+  syncToolbarHeight();
+
   toggle.onclick = () => {
     const next = !wrap.classList.contains('toolbar-collapsed');
 
     wrap.classList.toggle('toolbar-collapsed', next);
     toggle.setAttribute('aria-label', next ? '展开工具栏' : '收起工具栏');
+    syncToolbarHeight();
 
     try {
       localStorage.setItem(TOOLBAR_KEY, next ? '1' : '0');
