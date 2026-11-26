@@ -2150,6 +2150,12 @@ body.modal-open #view-editor .vditor-sv {
   color: var(--info);
 }
 
+/* 置顶标记：与发布状态同一行，用主色区分 */
+.post-state.pin {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* ─── 列表工具条 ───────────────────────────────────────── */
 
 .list-tools {

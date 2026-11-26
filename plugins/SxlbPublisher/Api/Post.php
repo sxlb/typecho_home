@@ -67,9 +67,13 @@ class Post
             ['table.contents.created' => 'created'],
             ['table.contents.modified' => 'modified'],
             ['table.contents.status' => 'status'],
-            ['table.contents.type' => 'type']
+            ['table.contents.type' => 'type'],
+            // order 作为「置顶」标记：> 0 时排在列表最前。
+            // 别名不能叫 order（保留字），统一用 pinned
+            ['table.contents.order' => 'pinned']
         )
             ->from('table.contents')
+            ->order('table.contents.order', Db::SORT_DESC)
             ->order('table.contents.created', Db::SORT_DESC)
             ->page($page, $size);
 
@@ -114,6 +118,7 @@ class Post
                 'modified' => (int) $row['modified'],
                 'status' => $row['type'] === 'post_draft' ? 'draft' : 'publish',
                 'scheduled' => $row['type'] === 'post' && (int) $row['created'] > $now,
+                'pinned' => (int) $row['pinned'] > 0,
             ];
         }
 
@@ -161,6 +166,7 @@ class Post
             'created' => (int) $row['created'],
             'modified' => (int) $row['modified'],
             'status' => $row['type'] === 'post_draft' ? 'draft' : 'publish',
+            'pinned' => (int) $row['order'] > 0,
             'categories' => $categories,
             'tags' => implode(',', self::tagNames($db, $cid)),
             'fields' => $fields,
@@ -220,6 +226,8 @@ class Post
             'slug' => self::normalizeSlug($db, (string) ($in['slug'] ?? ''), $title, $cid),
             'type' => $isDraft ? 'post_draft' : 'post',
             'status' => 'publish',
+            // 置顶：order > 0，列表按 order 倒序排在最前
+            'order' => !empty($in['pinned']) ? 1 : 0,
             'authorId' => max(1, (int) ($config->authorId ?? 1)),
             'allowComment' => 1,
             'allowPing' => 1,

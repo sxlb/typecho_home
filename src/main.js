@@ -79,6 +79,7 @@ const el = {
   albumText: $('#publish-album'),
   thumb: $('#publish-thumb'),
   reprint: $('#publish-reprint'),
+  pinned: $('#publish-pinned'),
   created: $('#publish-created'),
   slug: $('#publish-slug'),
   historySheet: $('#history-sheet'),
@@ -744,6 +745,7 @@ function renderList() {
   drafts.forEach((draft) => {
     entries.push({
       at: (draft.updatedAt || Date.now()) / 1000,
+      pinned: false,
       node: createItem({
         key: draft.id,
         title: draft.title || '未命名草稿',
@@ -766,6 +768,7 @@ function renderList() {
 
     entries.push({
       at: item.created,
+      pinned: Boolean(item.pinned),
       node: createItem({
         key: `post-${item.cid}`,
         title: item.title || '未命名文档',
@@ -777,13 +780,20 @@ function renderList() {
     });
   });
 
-  entries.sort((a, b) => b.at - a.at);
+  // 置顶优先，其余仍按时间倒序
+  entries.sort((a, b) => {
+    if (a.pinned !== b.pinned) {
+      return a.pinned ? -1 : 1;
+    }
+
+    return b.at - a.at;
+  });
 
   const fragment = document.createDocumentFragment();
   let currentGroup = '';
 
-  entries.forEach(({ at, node }) => {
-    const group = groupLabel(at);
+  entries.forEach(({ at, node, pinned }) => {
+    const group = pinned ? '置顶' : groupLabel(at);
 
     if (group !== currentGroup) {
       currentGroup = group;
@@ -921,6 +931,10 @@ function createItem({ title, badge = '', time, status = '', unsynced = false, it
     meta.push(`<span class="post-state">${statusLabels[status] || status}</span>`);
   } else if (badge) {
     meta.push(badge);
+  }
+
+  if (item.pinned) {
+    meta.push('<span class="post-state pin">置顶</span>');
   }
 
   if (unsynced) {
@@ -1289,6 +1303,7 @@ function fillSheet(data) {
   el.albumText.value = data.album || '';
   el.thumb.value = data.thumb || '';
   el.reprint.value = data.reprint || 'standard';
+  el.pinned.checked = Boolean(data.pinned);
   el.slug.value = data.slug || '';
   el.created.value = '';
 
@@ -1556,6 +1571,7 @@ function persistLocal() {
     imagePost: state.imagePost,
     thumb: el.thumb.value,
     reprint: el.reprint.value,
+    pinned: el.pinned.checked,
     slug: el.slug.value,
     created: el.created.value,
   };
@@ -1657,6 +1673,7 @@ function draftDiffers(draft, post) {
     [draft.reprint ?? 'standard', post.fields?.reprint ?? 'standard'],
     [draft.slug, post.slug],
     [draft.tags, post.tags],
+    [draft.pinned ? '1' : '0', post.pinned ? '1' : '0'],
   ];
 
   if (pairs.some(([local, remote]) => String(local ?? '') !== String(remote ?? ''))) {
@@ -1704,6 +1721,7 @@ async function openPost(cid) {
         album: source.album ?? post.fields?.album ?? '',
         thumb: source.thumb ?? post.fields?.thumb ?? '',
         reprint: source.reprint ?? post.fields?.reprint ?? 'standard',
+        pinned: source.pinned ?? post.pinned,
         slug: source.slug ?? post.slug,
         mid: [...state.selectedMids],
         imagePost: Boolean(post.imagePost),
@@ -4595,6 +4613,7 @@ async function submit(isDraft) {
     isDraft,
     mid: [...state.selectedMids],
     tags: collectTags().join(','),
+    pinned: el.pinned.checked,
     fields: currentFields(),
   };
 
@@ -5270,7 +5289,7 @@ function bind() {
   });
 
   // 摘要 / 封面 / 缩略名 / 相册描述 / 定时时间：改动后同样进入本地自动保存
-  [el.summary, el.thumb, el.slug, el.albumText, el.created].forEach((input) => {
+  [el.summary, el.thumb, el.slug, el.albumText, el.created, el.pinned].forEach((input) => {
     input.addEventListener('input', markDirty);
   });
 
