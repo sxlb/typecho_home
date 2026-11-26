@@ -1,9 +1,9 @@
 {
   "name": "sxlb-writer",
   "private": true,
-  "version": "2.25.0",
+  "version": "2.26.0",
   "type": "module",
-  "description": "凉薄博客安卓写作客户端",
+  "description": "淡墨 · 博客安卓写作客户端",
   "scripts": {
     "dev": "vite",
     "build": "node scripts/copy-vditor.mjs && vite build",
