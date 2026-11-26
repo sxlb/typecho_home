@@ -234,6 +234,8 @@ body {
   position: relative;
   height: 100vh;
   height: 100dvh;
+  /* 键盘弹出时由 JS 写入可视高度，保证底部工具栏抬到输入法上方 */
+  height: var(--app-height, 100dvh);
   overflow: hidden;
 }
 

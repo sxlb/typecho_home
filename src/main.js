@@ -417,6 +417,43 @@ function applyFontSize(value = getSettings().editorFontSize) {
 }
 
 /**
+ * 软键盘适配：把应用高度收缩到真正可见的区域
+ *
+ * Android WebView 在键盘弹出时不一定缩小布局视口，底部工具栏会被输入法盖住。
+ * 监听 visualViewport 后写 --app-height：
+ *   - 键盘弹出：高度变小，编辑器工具栏随之上移
+ *   - 键盘收起：回到窗口高度，不留空白
+ */
+function bindAppHeight() {
+  const viewport = window.visualViewport;
+
+  if (!viewport) {
+    return;
+  }
+
+  const apply = () => {
+    // 双指缩放时可视高度同样会变小，不能误判成键盘
+    if (viewport.scale > 1.01) {
+      return;
+    }
+
+    const visible = Math.round(viewport.height);
+    const full = Math.round(window.innerHeight);
+
+    // 差值小于 80px 视为地址栏 / 测量误差，用满高更稳
+    document.documentElement.style.setProperty(
+      '--app-height',
+      `${visible < full - 80 ? visible : full}px`,
+    );
+  };
+
+  viewport.addEventListener('resize', apply);
+  // 键盘弹出时布局视口可能被滚动，scroll 也要同步
+  viewport.addEventListener('scroll', apply);
+  apply();
+}
+
+/**
  * 管理模式是否可用：本地开关 + 已配置服务器
  *
  * @param {object} [settings]
@@ -5999,6 +6036,7 @@ themeQuery?.addEventListener?.('change', () => {
 });
 
 migrateLegacyDraft();
+bindAppHeight();
 // 初始视图：同步底部导航的选中态与 body 标记
 show('list');
 initAdmin({

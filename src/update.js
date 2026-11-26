@@ -6,10 +6,9 @@
  *   该域名不返回 CORS 头，WebView 里 fetch 会被直接拦掉。
  *   因此原生端统一走 CapacitorHttp（OkHttp 发请求，不受同源限制）。
  *
- * 国内网络直连 GitHub 经常超时，这里准备一组公共加速镜像：
- *   直连失败后按顺序重试，把原始链接整段拼在镜像前缀后面即可。
- *   镜像只是传输通道：安装时 Android 会校验新包签名与已装版本一致，
- *   不一致会被系统直接拒绝，所以不会装上来路不明的包。
+ * 国内网络直连 GitHub 经常超时，所以默认优先走公共加速镜像，
+ * 镜像都失败才回落到直连。镜像只是传输通道：安装时 Android 会校验新包签名
+ * 与已装版本一致，不一致会被系统直接拒绝，不会装上来路不明的包。
  */
 
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
@@ -20,8 +19,21 @@ const RELEASE_API = 'https://api.github.com/repos/sxlb/typecho_home/releases/tag
 const APK_NAME = 'sxlb-writer.apk';
 const APK_MIME = 'application/vnd.android.package-archive';
 
-/** 公共 GitHub 加速镜像，按顺序尝试；都失败才算下载失败 */
+/** 公共 GitHub 加速镜像：默认先走镜像，全部失败再直连 */
 const MIRRORS = ['https://gh-proxy.com/', 'https://ghproxy.net/', 'https://ghfast.top/'];
+
+/**
+ * 生成候选地址：镜像优先，直连兜底
+ *
+ * @param {string} url GitHub 原始地址（release 接口或 APK）
+ * @returns {Array<{name: string, url: string}>}
+ */
+function sources(url) {
+  return [
+    ...MIRRORS.map((prefix) => ({ name: new URL(prefix).host, url: prefix + url })),
+    { name: 'GitHub 直连', url },
+  ];
+}
 
 /**
  * 原生端用 CapacitorHttp 拿 JSON，Web 端退回 fetch（开发预览用）
@@ -62,26 +74,37 @@ async function getJson(url) {
  * @returns {Promise<{version: string, apkUrl: string, size: number}>}
  */
 export async function fetchLatestRelease() {
-  const data = await getJson(RELEASE_API);
-  const match = String(data?.body || '').match(/版本[：:]\s*v?([\d.]+)/);
+  let lastError = new Error('检测更新失败');
 
-  if (!match) {
-    throw new Error('发布信息里没有版本号');
+  // 接口同样默认走镜像：部分网络下 api.github.com 完全不可达
+  for (const source of sources(RELEASE_API)) {
+    try {
+      const data = await getJson(source.url);
+      const match = String(data?.body || '').match(/版本[：:]\s*v?([\d.]+)/);
+
+      if (!match) {
+        throw new Error('发布信息里没有版本号');
+      }
+
+      const asset = (Array.isArray(data.assets) ? data.assets : []).find((item) =>
+        /\.apk$/i.test(String(item?.name || '')),
+      );
+
+      if (!asset?.browser_download_url) {
+        throw new Error('发布里没有 APK 资产');
+      }
+
+      return {
+        version: match[1],
+        apkUrl: String(asset.browser_download_url),
+        size: Number(asset.size || 0),
+      };
+    } catch (error) {
+      lastError = error;
+    }
   }
 
-  const asset = (Array.isArray(data.assets) ? data.assets : []).find((item) =>
-    /\.apk$/i.test(String(item?.name || '')),
-  );
-
-  if (!asset?.browser_download_url) {
-    throw new Error('发布里没有 APK 资产');
-  }
-
-  return {
-    version: match[1],
-    apkUrl: String(asset.browser_download_url),
-    size: Number(asset.size || 0),
-  };
+  throw lastError;
 }
 
 /**
@@ -125,15 +148,9 @@ async function fetchBinary(url) {
  * @returns {Promise<{blob: Blob, source: string}>}
  */
 export async function downloadApk(apkUrl, { onSource } = {}) {
-  const sources = [{ name: 'GitHub 直连', url: apkUrl }];
-
-  for (const prefix of MIRRORS) {
-    sources.push({ name: new URL(prefix).host, url: prefix + apkUrl });
-  }
-
   let lastError = new Error('下载失败');
 
-  for (const source of sources) {
+  for (const source of sources(apkUrl)) {
     try {
       onSource?.(source.name);
 

@@ -74,4 +74,21 @@ if (!readFileSync(manifestPath, 'utf-8').includes('REQUEST_INSTALL_PACKAGES')) {
   throw new Error('写入安装权限失败：AndroidManifest.xml 模板可能已变化');
 }
 
-console.log('AndroidManifest.xml -> REQUEST_INSTALL_PACKAGES 已写入');
+/**
+ * 软键盘弹出时让窗口缩小而不是整体上移（adjustPan），
+ * 否则编辑器底部工具栏会被输入法盖住，只能先收起键盘才能操作。
+ * Android 15 强制 edge-to-edge，adjustResize 可能不生效，前端另有 visualViewport 兜底。
+ */
+if (!manifest.includes('android:windowSoftInputMode')) {
+  manifest = manifest.replace(
+    /(android:name="\.MainActivity")/,
+    '$1\n            android:windowSoftInputMode="adjustResize"',
+  );
+  writeFileSync(manifestPath, manifest);
+}
+
+if (!readFileSync(manifestPath, 'utf-8').includes('android:windowSoftInputMode="adjustResize"')) {
+  throw new Error('写入 adjustResize 失败：AndroidManifest.xml 模板可能已变化');
+}
+
+console.log('AndroidManifest.xml -> REQUEST_INSTALL_PACKAGES / adjustResize 已写入');
