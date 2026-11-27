@@ -8,7 +8,7 @@ import {
   destroyEditor,
   closeEditorSheets,
 } from './editor.js';
-import { initAdmin, openAdmin, handleAdminBack, refreshMeStats, setAdminEnabled } from './admin.js';
+import { initAdmin, openAdmin, openAdminTool, handleAdminBack, refreshMeStats, setAdminEnabled } from './admin.js';
 import { initDetail, openPostDetail, openShuoshuoDetail, resetDetail } from './detail.js';
 import {
   newDraftId,
@@ -66,6 +66,10 @@ const el = {
   tabbar: $('#tabbar'),
   meServer: $('#me-server'),
   meVersion: $('#me-version'),
+  meTools: $('#me-tools'),
+  meStats: $('#me-stats'),
+  meDashboard: $('#me-dashboard'),
+  meCheckUpdate: $('#me-check-update'),
   tabBadge: $('#tab-badge-me'),
   listLoading: $('#list-loading'),
   listSkeleton: $('#list-skeleton'),
@@ -222,6 +226,7 @@ const el = {
     radius: $('#set-radius'),
     radiusValue: $('#set-radius-value'),
     adminMode: $('#set-admin-mode'),
+    meLayout: $('#set-me-layout'),
   },
 };
 
@@ -348,8 +353,11 @@ function openMe() {
   }
 
   if (el.meVersion) {
-    el.meVersion.textContent = state.update?.version
-      ? `v${APP_VERSION} · 最新 v${state.update.version}`
+    const latest = state.update?.version;
+
+    // 与当前版本相同时不重复显示「最新 vX」
+    el.meVersion.textContent = latest && latest !== APP_VERSION
+      ? `v${APP_VERSION} · 最新 v${latest}`
       : `v${APP_VERSION}`;
   }
 
@@ -477,7 +485,7 @@ function adminReady(settings = getSettings()) {
 }
 
 /**
- * 管理模式入口：「我的」页里的内容 / 站点 / 插件三个二级入口
+ * 管理模式入口：「我的」页的管理宫格
  *
  * 服务端还有独立的管理接口开关，这里只控制 App 内入口是否可见。
  */
@@ -499,6 +507,83 @@ function applyAdminEntry() {
   if (!ready) {
     setTabBadge(0);
   }
+}
+
+/**
+ * 管理子视图的来源
+ *
+ * 「我的」页宫格可一步直达数据看板 / 评论 / 页面等，
+ * 这些页面返回时应该回「我的」，而不是绕回管理页。
+ *
+ * @type {'me'|'admin'|''}
+ */
+let adminFrom = '';
+
+/** 管理子视图返回：宫格进入的回「我的」，管理页进入的回管理页 */
+function backFromAdminChild() {
+  const from = adminFrom === 'me' ? 'me' : 'admin';
+
+  adminFrom = '';
+  show(from);
+}
+
+/**
+ * 「我的」页概览数字的去向
+ *
+ * 已发布 / 草稿 回写作列表并套用对应筛选，其余直接进管理工具。
+ *
+ * @param {'posts'|'drafts'|'comments'|'media'|'categories'|'tags'} key
+ */
+function openStatTarget(key) {
+  if (key === 'posts' || key === 'drafts') {
+    openListWithFilter(key === 'posts' ? 'publish' : 'draft');
+    return;
+  }
+
+  adminFrom = 'me';
+  show('admin');
+
+  if (key === 'comments') {
+    openAdminTool('comments');
+  } else if (key === 'media') {
+    openAdminTool('media');
+  } else if (key === 'categories') {
+    openAdminTool('metas', 'category');
+  } else if (key === 'tags') {
+    openAdminTool('metas', 'tag');
+  }
+}
+
+/**
+ * 回写作列表并套用筛选
+ *
+ * @param {'all'|'publish'|'draft'|'scheduled'|'local'} filter
+ */
+function openListWithFilter(filter) {
+  state.filter = filter;
+  resetBatchSelection();
+
+  [...el.listFilters.children].forEach((chip) => {
+    chip.classList.toggle('active', chip.dataset.filter === filter);
+  });
+
+  show('list');
+  renderList();
+
+  if (isConfigured()) {
+    loadPosts({ reset: true });
+  }
+}
+
+/**
+ * 「我的」页管理入口排布
+ *
+ * compact：一行 5 列；relaxed：两行（3 + 2）。
+ */
+function applyMeLayout() {
+  const layout = getSettings().meLayout || DEFAULT_SETTINGS.meLayout;
+
+  document.documentElement.dataset.meLayout = layout === 'relaxed' ? 'relaxed' : 'compact';
 }
 
 // ─── 界面风格 ────────────────────────────────────────────────────────────
@@ -3413,21 +3498,24 @@ const pages = {
   templates: {},
 };
 
-/** 管理页入口与首页都能打开页面列表 */
+/** 首页、管理页与「我的」宫格都能打开页面列表 */
 function openPages(from = 'list') {
   if (!isConfigured()) {
     openSettings();
     return;
   }
 
-  state.pagesFrom = from === 'admin' ? 'admin' : 'list';
+  state.pagesFrom = from === 'admin' ? 'admin' : (from === 'me' ? 'me' : 'list');
   show('pages');
   loadPages({ reset: true });
 }
 
-/** 页面列表返回：从管理页进来就回管理页 */
+/** 页面列表返回：回到进入前的视图 */
 function closePages() {
-  show(state.pagesFrom === 'admin' ? 'admin' : 'list');
+  const from = state.pagesFrom;
+
+  state.pagesFrom = 'list';
+  show(from === 'admin' ? 'admin' : (from === 'me' ? 'me' : 'list'));
 }
 
 async function loadPages({ reset = true } = {}) {
@@ -5299,6 +5387,7 @@ function openSettings() {
   el.settings.postOpen.value = settings.postOpenMode || DEFAULT_SETTINGS.postOpenMode;
   el.settings.theme.value = settings.theme || DEFAULT_SETTINGS.theme;
   el.settings.adminMode.value = settings.adminMode || DEFAULT_SETTINGS.adminMode;
+  el.settings.meLayout.value = settings.meLayout || DEFAULT_SETTINGS.meLayout;
 
   styleSelection = settings.style || DEFAULT_SETTINGS.style;
   customPreview = null;
@@ -5421,6 +5510,7 @@ function saveSettingsFromForm() {
     style: styleSelection,
     customTheme: readCustomForm(),
     adminMode: el.settings.adminMode.value || DEFAULT_SETTINGS.adminMode,
+    meLayout: el.settings.meLayout.value || DEFAULT_SETTINGS.meLayout,
   });
 
   if (!saved) {
@@ -5431,6 +5521,7 @@ function saveSettingsFromForm() {
   applyTheme();
   applyFontSize();
   applyAdminEntry();
+  applyMeLayout();
 
   return { ok: true };
 }
@@ -5452,11 +5543,13 @@ function revertSettingsPreview() {
   el.settings.size.value = settings.editorFontSize || DEFAULT_SETTINGS.editorFontSize;
   el.settings.postOpen.value = settings.postOpenMode || DEFAULT_SETTINGS.postOpenMode;
   el.settings.adminMode.value = settings.adminMode || DEFAULT_SETTINGS.adminMode;
+  el.settings.meLayout.value = settings.meLayout || DEFAULT_SETTINGS.meLayout;
 
   applyStyle(styleSelection);
   applyTheme(settings.theme);
   applyFontSize(settings.editorFontSize);
   applyAdminEntry();
+  applyMeLayout();
 }
 
 /**
@@ -5829,17 +5922,56 @@ function bind() {
     }
   });
 
-  // 「我的」页入口：内容 / 站点 / 插件三个二级入口分别直达对应分段
-  [
-    ['#me-content', 'content'],
-    ['#me-site-admin', 'site'],
-    ['#me-plugins', 'plugins'],
-  ].forEach(([selector, tab]) => {
-    $(selector).addEventListener('click', () => {
+  // 「我的」页管理宫格：站点设置与插件分开，各自直达
+  el.meTools?.addEventListener('click', (event) => {
+    const tile = event.target.closest('[data-me]');
+
+    if (!tile) {
+      return;
+    }
+
+    const key = tile.dataset.me;
+
+    // 记下来源：这些页面的返回按钮据此决定回「我的」还是管理页
+    adminFrom = 'me';
+
+    if (key === 'pages') {
+      openPages('me');
+      return;
+    }
+
+    if (key === 'links') {
+      openLinks();
+      return;
+    }
+
+    if (key === 'calendar') {
+      openCalendar();
+      return;
+    }
+
+    if (key === 'site' || key === 'plugins') {
       show('admin');
-      openAdmin(tab);
-    });
+      openAdmin(key);
+    }
   });
+
+  // 概览数字即入口：点已发布 / 草稿回列表，点评论 / 媒体 / 分类 / 标签进管理工具
+  el.meStats?.addEventListener('click', (event) => {
+    const node = event.target.closest('[data-stat]');
+
+    if (node) {
+      openStatTarget(node.dataset.stat);
+    }
+  });
+
+  el.meDashboard?.addEventListener('click', () => {
+    adminFrom = 'me';
+    openStats();
+  });
+
+  el.meCheckUpdate?.addEventListener('click', () => checkUpdate({ manual: true }));
+
   $('#me-settings').addEventListener('click', openSettings);
   $('#btn-shuoshuo-refresh').addEventListener('click', () => loadShuoshuo({ reset: true }));
   $('#btn-shuoshuo-new').addEventListener('click', () => openShuoshuoSheet());
@@ -5886,8 +6018,7 @@ function bind() {
     }
   });
   $('#btn-admin-back').addEventListener('click', () => show('me'));
-  $('#btn-pages-back').addEventListener('click', closePages);
-  $('#btn-pages-refresh').addEventListener('click', () => loadPages({ reset: true }));
+  $('#btn-pages-back').addEventListener('click', closePages);  $('#btn-pages-refresh').addEventListener('click', () => loadPages({ reset: true }));
   $('#btn-pages-new').addEventListener('click', openNewPage);
   el.pagesMore.addEventListener('click', () => {
     pages.page += 1;
@@ -5897,7 +6028,7 @@ function bind() {
   $('#page-sheet-cancel').addEventListener('click', closePageSheet);
   el.pageMask.addEventListener('click', closePageSheet);
   $('#page-sheet-done').addEventListener('click', applyPageSheet);
-  $('#btn-links-back').addEventListener('click', () => show('admin'));
+  $('#btn-links-back').addEventListener('click', backFromAdminChild);
   $('#btn-links-refresh').addEventListener('click', loadLinks);
   $('#btn-links-new').addEventListener('click', () => openLinkSheet(null));
   el.linkMask.addEventListener('click', closeLinkSheet);
@@ -5905,7 +6036,7 @@ function bind() {
   $('#link-sheet-cancel').addEventListener('click', closeLinkSheet);
   $('#link-sheet-done').addEventListener('click', saveLink);
   el.linkDelete.addEventListener('click', deleteLink);
-  $('#btn-stats-back').addEventListener('click', () => show('admin'));
+  $('#btn-stats-back').addEventListener('click', backFromAdminChild);
   $('#btn-stats-refresh').addEventListener('click', loadStats);
   el.statsRange.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-days]');
@@ -5927,7 +6058,7 @@ function bind() {
     loadStats();
   });
   $('#btn-visitors').addEventListener('click', openVisitors);
-  $('#btn-calendar-back').addEventListener('click', () => show('admin'));
+  $('#btn-calendar-back').addEventListener('click', backFromAdminChild);
   $('#btn-calendar-refresh').addEventListener('click', loadCalendar);
   $('#calendar-prev').addEventListener('click', () => shiftCalendarMonth(-1));
   $('#calendar-next').addEventListener('click', () => shiftCalendarMonth(1));
@@ -6284,13 +6415,13 @@ function bind() {
       } else if (state.view === 'pages') {
         closePages();
       } else if (state.view === 'links') {
-        show('admin');
+        backFromAdminChild();
       } else if (state.view === 'stats') {
-        show('admin');
+        backFromAdminChild();
       } else if (state.view === 'visitors') {
         show('stats');
       } else if (state.view === 'calendar') {
-        show('admin');
+        backFromAdminChild();
       } else if (state.view === 'settings') {
         // 与屏幕上的返回按钮一致：不保存表单，配置不完整时拦截；
         // 表单全空且未配置时才允许退出 App
@@ -6332,6 +6463,8 @@ themeQuery?.addEventListener?.('change', () => {
 
 migrateLegacyDraft();
 bindAppHeight();
+// 「我的」页布局偏好需要在首屏渲染前生效，避免切换 Tab 时闪一下
+applyMeLayout();
 // 清掉早期版本用 base64 文本写坏的安装包，避免占空间或被误用
 dropLegacyApk();
 // 初始视图：同步底部导航的选中态与 body 标记
@@ -6339,11 +6472,20 @@ show('list');
 initAdmin({
   onToast: toast,
   onOpenPages: () => openPages('admin'),
-  onOpenLinks: openLinks,
-  onOpenStats: openStats,
-  onOpenCalendar: openCalendar,
-  // 时光机与底部 Tab 共用视图，离开管理页即可
-  onOpenShuoshuo: () => openShuoshuo(),
+  onOpenLinks: () => {
+    adminFrom = 'admin';
+    openLinks();
+  },
+  onOpenStats: () => {
+    adminFrom = 'admin';
+    openStats();
+  },
+  onOpenCalendar: () => {
+    adminFrom = 'admin';
+    openCalendar();
+  },
+  // 宫格直达工具时，工具页返回直接回「我的」
+  onExit: () => show('me'),
   // 概览刷新时同步待审核角标，不必再单独请求一次
   onStats: (data) => setTabBadge(Number(data?.pendingComments || 0)),
 });

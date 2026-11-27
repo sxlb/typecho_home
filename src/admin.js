@@ -20,8 +20,7 @@ const el = {
   errorText: $('#admin-error-text'),
   overview: $('#admin-overview'),
   tabs: $('#admin-tabs'),
-  // 统计已移到「我的」页常驻显示
-  siteName: $('#me-site'),
+  // 统计在「我的」页账号卡内显示
   stats: $('#me-stats'),
   statsHint: $('#me-stats-hint'),
   content: $('#admin-content'),
@@ -44,6 +43,8 @@ const state = {
   plugins: [],
   siteGroups: [],
   tool: null, // { kind: 'comments' | 'media', status, page, items, total, busy }
+  // 宫格直达工具：工具页返回时直接离开管理页
+  launchedFromMe: false,
   loaded: false,
   busy: false,
   statsBusy: false,
@@ -56,10 +57,10 @@ let onOpenPages = () => {};
 let onOpenLinks = () => {};
 let onOpenStats = () => {};
 let onOpenCalendar = () => {};
-// 时光机与底部 Tab 是同一个视图，这里只负责跳出管理页
-let onOpenShuoshuo = () => {};
 // 概览数据变化时通知外部（用于待审核角标）
 let onStats = () => {};
+// 宫格直达工具时，工具页返回直接离开管理页
+let onExit = () => {};
 
 export function initAdmin(options = {}) {
   toast = typeof options.onToast === 'function' ? options.onToast : toast;
@@ -69,15 +70,13 @@ export function initAdmin(options = {}) {
   onOpenCalendar = typeof options.onOpenCalendar === 'function'
     ? options.onOpenCalendar
     : onOpenCalendar;
-  onOpenShuoshuo = typeof options.onOpenShuoshuo === 'function'
-    ? options.onOpenShuoshuo
-    : onOpenShuoshuo;
   onStats = typeof options.onStats === 'function' ? options.onStats : onStats;
+  onExit = typeof options.onExit === 'function' ? options.onExit : onExit;
 
   $('#btn-admin-refresh').addEventListener('click', () => load());
   $('#btn-admin-retry').addEventListener('click', () => load());
   $('#btn-admin-config-back').addEventListener('click', showList);
-  $('#btn-admin-tools-back').addEventListener('click', showList);
+  $('#btn-admin-tools-back').addEventListener('click', closeTool);
 
   // 分段切换：一次只显示一类，减少单屏信息量
   el.tabs?.addEventListener('click', (event) => {
@@ -108,9 +107,27 @@ export async function openAdmin(tab = 'content') {
     return;
   }
 
+  state.launchedFromMe = false;
   showList();
   switchTab(tab);
   await load();
+}
+
+/**
+ * 直接打开管理页里的某个工具列表
+ *
+ * 「我的」页的管理宫格用它省掉一层中间页：先加载概览（工具列表依赖分类 / 统计），
+ * 再展开对应工具。此时工具页的「返回」直接回「我的」。
+ *
+ * @param {'comments'|'media'|'metas'} kind
+ */
+export async function openAdminTool(kind, status = '') {
+  await openAdmin('content');
+
+  if (state.loaded) {
+    state.launchedFromMe = true;
+    openTool(kind, status);
+  }
 }
 
 /**
@@ -127,10 +144,6 @@ export function setAdminEnabled(enabled, reason = '') {
   }
 
   if (!enabled) {
-    if (el.siteName) {
-      el.siteName.hidden = true;
-    }
-
     showStatsHint(reason);
     return;
   }
@@ -169,7 +182,7 @@ export async function refreshMeStats() {
  */
 export function handleAdminBack() {
   if (state.tool) {
-    showList();
+    closeTool();
     return true;
   }
 
@@ -227,6 +240,8 @@ async function load() {
 function showList() {
   state.panel = null;
   state.tool = null;
+  // 离开工具列表即视为普通入口，宫格来源标记不再保留
+  state.launchedFromMe = false;
   // 离开列表时取消未发出的搜索，避免旧 tool 被异步回调使用
   window.clearTimeout(searchTimer);
   clearPendingOff();
@@ -235,6 +250,21 @@ function showList() {
   el.error.hidden = true;
   el.loading.hidden = true;
   el.overview.hidden = !state.loaded;
+}
+
+/**
+ * 关闭工具列表
+ *
+ * 从「我的」宫格直达的，返回时直接回「我的」，不再绕一层管理页列表。
+ */
+function closeTool() {
+  if (state.launchedFromMe) {
+    state.launchedFromMe = false;
+    onExit();
+    return;
+  }
+
+  showList();
 }
 
 /**
@@ -269,51 +299,48 @@ function showError(message) {
 // ─── 概览 ────────────────────────────────────────────────────────────────
 
 function renderStats(data) {
-  // 站点名放在「我的」页概览标题右侧，一眼知道在看哪个站
-  if (el.siteName) {
-    el.siteName.textContent = data.site || '';
-    el.siteName.hidden = !data.site;
-  }
-
   hideStatsHint();
 
   const items = [
-    { label: '已发布', value: data.posts },
-    { label: '草稿', value: data.drafts },
+    { key: 'posts', label: '已发布', value: data.posts },
+    { key: 'drafts', label: '草稿', value: data.drafts },
     {
+      key: 'comments',
       label: '评论',
       value: data.comments,
-      hint: data.pendingComments ? `${data.pendingComments} 条待审核` : '',
+      pending: Number(data.pendingComments || 0),
     },
-    { label: '媒体', value: data.media },
-    { label: '分类', value: data.categories },
-    { label: '标签', value: data.tags },
+    { key: 'media', label: '媒体', value: data.media },
+    { key: 'categories', label: '分类', value: data.categories },
+    { key: 'tags', label: '标签', value: data.tags },
   ];
 
   el.stats.innerHTML = '';
 
+  // 数字本身是入口：点已发布进文章列表，点评论进审核，由 main.js 统一分发
   items.forEach((item) => {
-    const card = document.createElement('div');
-    card.className = 'stat-card';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'me-stat';
+    button.dataset.stat = item.key;
 
-    const value = document.createElement('div');
-    value.className = 'stat-value';
+    const value = document.createElement('span');
+    value.className = 'me-stat-value';
     value.textContent = Number(item.value || 0).toLocaleString('zh-CN');
 
-    const label = document.createElement('div');
-    label.className = 'stat-label';
-    label.textContent = item.label;
-
-    card.append(value, label);
-
-    if (item.hint) {
-      const hint = document.createElement('div');
-      hint.className = 'stat-hint';
-      hint.textContent = item.hint;
-      card.appendChild(hint);
+    if (item.pending) {
+      const dot = document.createElement('span');
+      dot.className = 'me-stat-dot';
+      dot.title = `${item.pending} 条待审核`;
+      value.appendChild(dot);
     }
 
-    el.stats.appendChild(card);
+    const label = document.createElement('span');
+    label.className = 'me-stat-label';
+    label.textContent = item.label;
+
+    button.append(value, label);
+    el.stats.appendChild(button);
   });
 
   onStats(data);
@@ -487,11 +514,6 @@ function renderContent() {
       description: '关于、友链、时光机等自定义页面',
     },
     {
-      key: 'shuoshuo',
-      title: '时光机说说',
-      description: '发布、编辑与删除说说',
-    },
-    {
       key: 'links',
       title: '友情链接',
       description: '增删改友链、设置显示位置与排序',
@@ -542,11 +564,6 @@ function renderContent() {
         return;
       }
 
-      if (entry.key === 'shuoshuo') {
-        onOpenShuoshuo();
-        return;
-      }
-
       if (entry.key === 'calendar') {
         onOpenCalendar();
         return;
@@ -575,13 +592,15 @@ const COMMENT_STATUS = {
   spam: { label: '垃圾', className: 'off' },
 };
 
-function openTool(kind) {
-  let status = '';
+function openTool(kind, initialStatus = '') {
+  let status = initialStatus;
 
-  if (kind === 'comments') {
-    status = Number(state.overview?.pendingComments || 0) > 0 ? 'waiting' : 'all';
-  } else if (kind === 'metas') {
-    status = 'category';
+  if (!status) {
+    if (kind === 'comments') {
+      status = Number(state.overview?.pendingComments || 0) > 0 ? 'waiting' : 'all';
+    } else if (kind === 'metas') {
+      status = 'category';
+    }
   }
 
   state.tool = {
@@ -1861,6 +1880,8 @@ function renderField(field) {
 
       const input = document.createElement('input');
       input.type = field.type;
+      // 单选靠 name 分组互斥，缺了它会变成多个都能选中
+      input.name = field.name;
       input.dataset.field = field.name;
       input.value = option.value;
       input.checked = Boolean(option.checked);

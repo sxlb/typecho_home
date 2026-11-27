@@ -3576,39 +3576,6 @@ body.modal-open #view-editor .vditor-sv {
   font-weight: 600;
 }
 
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.stat-card {
-  padding: 14px 16px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-}
-
-.stat-value {
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-}
-
-.stat-label {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--ink-3);
-}
-
-.stat-hint {
-  margin-top: 2px;
-  font-size: 11px;
-  color: var(--warn);
-}
-
 .plugin-item {
   display: flex;
   align-items: center;
@@ -4054,19 +4021,80 @@ body.has-tabbar .toast {
 /* ─── 我的 ─────────────────────────────────────────────── */
 
 .me-body {
-  padding-top: 20px;
+  /* 「我的」页不再有顶栏，顶部留出刘海安全区 */
+  padding-top: calc(12px + env(safe-area-inset-top));
 }
 
 .me-card {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 24px;
-  padding: 20px 18px;
+  flex-direction: column;
+  margin-bottom: 14px;
+  padding: 16px 16px 6px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.me-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 14px;
+}
+
+/* 六个数字既是概览也是入口：上下两行，点按整格响应 */
+.me-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 0 -16px;
+  border-top: 1px solid var(--line);
+}
+
+.me-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 11px 4px 12px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.me-stat:nth-child(n + 4) {
+  border-top: 1px solid var(--line);
+}
+
+.me-stat:active {
+  background: var(--hover);
+}
+
+.me-stat-value {
+  position: relative;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.me-stat-label {
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* 待审核提醒：挂在评论数字右上角 */
+.me-stat-dot {
+  position: absolute;
+  top: -1px;
+  right: -7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
 }
 
 .me-avatar {
@@ -4098,8 +4126,8 @@ body.has-tabbar .toast {
   word-break: break-all;
 }
 
-/* 站点概览：账号卡下方的数据卡片，进「我的」即可见，不用再点一层 */
-.me-overview {
+/* 管理卡：标题在卡内，入口用内嵌网格，与账号卡形成两级层次 */
+.me-panel {
   margin-bottom: 22px;
   padding: 16px;
   border: 1px solid var(--line);
@@ -4108,7 +4136,7 @@ body.has-tabbar .toast {
   box-shadow: var(--shadow);
 }
 
-.me-overview-head {
+.me-panel-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -4117,94 +4145,109 @@ body.has-tabbar .toast {
 }
 
 /* 标题在卡片内部，去掉分组标题自带的偏移 */
-.me-overview-head .settings-group-title {
+.me-panel-head .settings-group-title {
   margin: 0;
 }
 
-.me-site {
-  overflow: hidden;
-  color: var(--ink-3);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* 账号卡右上角的设置入口：常用操作前置，不用滚到底 */
+.me-gear {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  margin-left: auto;
+  border: none;
+  border-radius: 50%;
+  background: var(--field);
+  color: var(--ink-2);
+  -webkit-tap-highlight-color: transparent;
 }
 
-.me-site[hidden] {
-  display: none;
-}
-
-/* 卡片内的统计块改用浅底色，避免两层卡片边框叠加显得笨重 */
-.me-overview .stat-card {
-  padding: 12px 14px;
-  border-color: transparent;
+.me-gear:active {
   background: var(--hover);
-  box-shadow: none;
 }
 
-.me-overview .me-hint {
-  padding: 10px 0 0;
+/* 管理工具宫格：紧凑模式一行 5 列，分隔线画在格子上，空位不会露出灰底 */
+.me-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 6px);
+  background: var(--surface);
 }
 
-.me-link-text {
+/* 宽松模式：3 + 2 两行，第二行两格各占半行，边界完整 */
+:root[data-me-layout='relaxed'] .me-grid {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+:root[data-me-layout='relaxed'] .me-tile {
+  grid-column: span 2;
+}
+
+:root[data-me-layout='relaxed'] .me-tile:nth-child(4),
+:root[data-me-layout='relaxed'] .me-tile:nth-child(5) {
+  grid-column: span 3;
+}
+
+.me-tile {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.me-link-title {
-  color: var(--ink);
-  font-size: 15px;
-  font-weight: 500;
-}
-
-.me-link-desc {
-  color: var(--ink-3);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.me-links {
-  padding: 0;
-  overflow: hidden;
-}
-
-.me-link {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  padding: 15px 16px;
+  gap: 6px;
+  padding: 13px 4px 12px;
   border: none;
-  background: transparent;
-  color: var(--ink);
+  background: var(--surface);
+  /* 每个格子右下各画 1px，拼成网格线；空位保持纯白 */
+  box-shadow: inset -1px -1px 0 var(--line);
   font-family: inherit;
-  font-size: 15px;
-  text-align: left;
+  text-align: center;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.me-link + .me-link {
-  border-top: 1px solid var(--line);
-}
-
-.me-link:active {
+.me-tile:active {
   background: var(--hover);
 }
 
-.me-link[hidden] {
-  display: none;
+.me-tile-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 2px;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
-.me-arrow {
+.me-tile-title {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+/* 管理卡标题右侧的数据看板入口 */
+.me-detail {
+  padding: 0;
+  border: none;
+  background: transparent;
   color: var(--ink-3);
-  font-size: 18px;
+  font-family: inherit;
+  font-size: 12px;
   line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.me-detail:active {
+  color: var(--accent);
 }
 
 .me-hint {
   margin: 0;
-  padding: 0 16px 14px;
+  padding: 0 0 12px;
   font-size: 12px;
   line-height: 1.6;
   color: var(--ink-3);
@@ -4215,10 +4258,34 @@ body.has-tabbar .toast {
 }
 
 .me-version {
-  margin: 28px 0 0;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 18px 0 0;
   font-size: 12px;
   color: var(--ink-3);
+}
+
+.me-version-btn {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: inherit;
+  font-size: 12px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.me-version-btn:active {
+  color: var(--accent);
+}
+
+/* 宽屏（平板 / 横屏）下限制内容宽度，避免统计卡与宫格被拉得过宽 */
+.me-body > * {
+  width: 100%;
+  max-width: 560px;
+  margin-inline: auto;
 }
 
 /* ─── 预览 / 评论 ─────────────────────────────────────── */

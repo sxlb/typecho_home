@@ -157,7 +157,7 @@ class Admin
 
             $value = $values[$key];
 
-            if ($input instanceof Checkbox) {
+            if (self::typeOf($input) === 'checkbox') {
                 $_POST[$key] = is_array($value) ? array_values(array_map('strval', $value)) : [];
             } elseif (!is_array($value)) {
                 $_POST[$key] = (string) $value;
@@ -386,7 +386,7 @@ class Admin
 
             $value = $values[$key];
 
-            if ($input instanceof Checkbox) {
+            if (self::typeOf($input) === 'checkbox') {
                 $_POST[$key] = is_array($value) ? array_values(array_map('strval', $value)) : [];
             } elseif (!is_array($value)) {
                 $_POST[$key] = (string) $value;
@@ -1718,6 +1718,31 @@ class Admin
             return 'number';
         }
 
+        // 主题 / 第三方插件常自定义 Element（Handsome 的 Select、Radio 等），
+        // 它们不继承上面的标准类，只能从实际控件的标签与属性判断
+        $node = self::inputNode($input);
+
+        if ($node) {
+            $tag = $node->getTagName();
+
+            if ($tag === 'select') {
+                return 'select';
+            }
+
+            if ($tag === 'textarea') {
+                return 'textarea';
+            }
+
+            if ($tag === 'input') {
+                // 属性值大小写不敏感：Handsome 的 Checkbox 写成 type="Checkbox"
+                $nodeType = strtolower((string) $node->getAttribute('type'));
+
+                if (in_array($nodeType, ['radio', 'checkbox', 'number', 'password', 'hidden'], true)) {
+                    return $nodeType;
+                }
+            }
+        }
+
         $htmlType = isset($input->input) ? $input->input->getAttribute('type') : null;
 
         if ($htmlType === 'number' || $htmlType === 'password' || $htmlType === 'hidden') {
@@ -1725,6 +1750,35 @@ class Admin
         }
 
         return 'text';
+    }
+
+    /**
+     * 元素实际承载输入的节点
+     *
+     * 标准元素把主控件放在 input 上；自定义元素只往 inputs / container 里塞，
+     * 所以这里两处都找一遍。
+     */
+    private static function inputNode(Element $input): ?Layout
+    {
+        if (isset($input->input) && $input->input instanceof Layout) {
+            $tag = $input->input->getTagName();
+
+            if (in_array($tag, ['input', 'select', 'textarea'], true)) {
+                return $input->input;
+            }
+        }
+
+        foreach ($input->inputs as $node) {
+            if (!($node instanceof Layout)) {
+                continue;
+            }
+
+            if (in_array($node->getTagName(), ['input', 'select', 'textarea'], true)) {
+                return $node;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -1747,7 +1801,46 @@ class Admin
 
     private static function labelOf(Element $input): string
     {
-        return isset($input->label) ? self::textOf($input->label) : '';
+        if (isset($input->label)) {
+            $text = self::textOf($input->label);
+
+            if ($text !== '') {
+                return $text;
+            }
+        }
+
+        // 主题自定义元素把标题写进元素自身的面板头部，没有 label 属性
+        foreach ($input->getItems() as $item) {
+            if (!($item instanceof Layout)) {
+                continue;
+            }
+
+            if (in_array($item->getTagName(), ['input', 'select', 'textarea'], true)) {
+                continue;
+            }
+
+            $text = self::textOf($item);
+
+            if ($text !== '') {
+                return $text;
+            }
+        }
+
+        if (isset($input->container)) {
+            foreach ($input->container->getItems() as $item) {
+                if (!($item instanceof Layout)) {
+                    continue;
+                }
+
+                $text = self::textOf($item);
+
+                if ($text !== '') {
+                    return $text;
+                }
+            }
+        }
+
+        return '';
     }
 
     private static function descriptionOf(Element $input): string
@@ -1768,57 +1861,98 @@ class Admin
     /**
      * Select / Radio / Checkbox 的选项
      *
+     * 标准元素与主题自定义元素的结构不同，这里按类型分别取：
+     * select 读 option 节点，单选 / 多选读 inputs 与所在行的文案。
+     *
      * @return array|null 非选项元素返回 null
      */
     private static function optionsOf(Element $input): ?array
     {
-        $options = [];
+        $type = self::typeOf($input);
 
-        if ($input instanceof Select) {
-            $select = $input->inputs[0] ?? null;
+        if ($type === 'select') {
+            $node = self::inputNode($input);
 
-            if (!$select) {
-                return [];
-            }
-
-            foreach ($select->getItems() as $option) {
-                $options[] = [
-                    'value' => (string) $option->getAttribute('value'),
-                    'label' => self::textOf($option),
-                    'checked' => $option->getAttribute('selected') !== null,
-                ];
-            }
-
-            return $options;
+            return $node ? self::optionItems($node) : [];
         }
 
-        if (!($input instanceof Radio) && !($input instanceof Checkbox)) {
+        if ($type !== 'radio' && $type !== 'checkbox') {
             return null;
         }
 
-        if (!isset($input->container)) {
-            return [];
-        }
+        return self::choiceItems($input);
+    }
 
-        foreach ($input->container->getItems() as $row) {
-            $node = null;
-            $label = null;
+    /**
+     * select 下的选项，兼容一层 optgroup
+     */
+    private static function optionItems(Layout $select, int $depth = 0): array
+    {
+        $options = [];
 
-            foreach ($row->getItems() as $child) {
-                if ($child->getTagName() === 'input') {
-                    $node = $child;
-                } elseif ($child->getTagName() === 'label') {
-                    $label = $child;
-                }
-            }
-
-            if (!$node) {
+        foreach ($select->getItems() as $item) {
+            if (!($item instanceof Layout)) {
                 continue;
             }
 
+            $tag = $item->getTagName();
+
+            if ($tag === 'optgroup' && $depth < 1) {
+                $options = array_merge($options, self::optionItems($item, $depth + 1));
+                continue;
+            }
+
+            if ($tag !== 'option') {
+                continue;
+            }
+
+            $value = (string) $item->getAttribute('value');
+            $label = self::textOf($item);
+
             $options[] = [
-                'value' => (string) $node->getAttribute('value'),
-                'label' => $label ? self::textOf($label) : (string) $node->getAttribute('value'),
+                'value' => $value,
+                'label' => $label !== '' ? $label : $value,
+                'checked' => $item->getAttribute('selected') !== null,
+            ];
+        }
+
+        return $options;
+    }
+
+    /**
+     * 单选 / 多选的选项
+     *
+     * 控件都在 inputs 里，选项文案放在同一行容器中（标准 label 或自定义标签）。
+     */
+    private static function choiceItems(Element $input): array
+    {
+        $rows = isset($input->container) ? $input->container->getItems() : [];
+        $options = [];
+
+        foreach ($input->inputs as $node) {
+            if (!($node instanceof Layout) || $node->getTagName() !== 'input') {
+                continue;
+            }
+
+            $value = (string) $node->getAttribute('value');
+            $label = '';
+
+            foreach ($rows as $row) {
+                if (!($row instanceof Layout)) {
+                    continue;
+                }
+
+                foreach ($row->getItems() as $child) {
+                    if ($child === $node) {
+                        $label = self::textOf($row);
+                        break 2;
+                    }
+                }
+            }
+
+            $options[] = [
+                'value' => $value,
+                'label' => $label !== '' ? $label : $value,
                 'checked' => $node->getAttribute('checked') !== null,
             ];
         }
