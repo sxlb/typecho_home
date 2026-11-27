@@ -25,6 +25,7 @@ import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import {
   downloadApk,
+  dropLegacyApk,
   fetchLatestRelease,
   findSavedApk,
   openApk,
@@ -5239,8 +5240,8 @@ let updateStage = 'idle';
 let updateError = '';
 let updateSource = '';
 let savedApkUri = '';
-// 浏览器环境下没有文件 URI 语义，安装时直接复用内存里的 Blob
-let savedApkBlob = null;
+// 浏览器环境下没有文件 URI 语义，安装时用内存里的 base64 还原
+let savedApkBase64 = '';
 
 /**
  * 检查更新
@@ -5273,7 +5274,7 @@ async function checkUpdate({ manual = false } = {}) {
 
     // 版本号变了说明缓存的旧包已过期，直接丢弃重新下
     savedApkUri = '';
-    savedApkBlob = null;
+    savedApkBase64 = '';
 
     if (manual) {
       // 手动点「检查更新」= 想升级，直接开始下载
@@ -5369,15 +5370,16 @@ async function startUpdate() {
   renderUpdatePanel();
 
   try {
-    const { blob, source } = await downloadApk(info.apkUrl, {
+    const { base64, source } = await downloadApk(info.apkUrl, {
+      expectedSize: info.size,
       onSource: (name) => {
         updateSource = name;
         renderUpdatePanel();
       },
     });
 
-    savedApkBlob = blob;
-    savedApkUri = await saveApk(blob);
+    savedApkBase64 = base64;
+    savedApkUri = await saveApk(base64, info.version);
     updateStage = 'saved';
     renderUpdatePanel();
 
@@ -5402,7 +5404,7 @@ async function launchInstaller() {
   }
 
   try {
-    await openApk(savedApkUri, savedApkBlob);
+    await openApk(savedApkUri, savedApkBase64);
   } catch (error) {
     updateStage = 'failed';
     updateError = `无法自动打开安装界面，请点下方「安装」重试（${error.message || '未知原因'}）`;
@@ -5414,8 +5416,10 @@ async function launchInstaller() {
  * 用户点「安装」：文件还在就直接装，被系统清掉就重新下载
  */
 async function installSavedApk() {
+  const version = state.update?.version || '';
+
   if (!savedApkUri) {
-    savedApkUri = await findSavedApk();
+    savedApkUri = await findSavedApk(version);
   }
 
   if (!savedApkUri) {
@@ -5439,6 +5443,11 @@ function describeUpdateError(error) {
 
   if (/HTTP 4\d\d/.test(message)) {
     return `下载被拒绝（${message}），请稍后重试`;
+  }
+
+  // 镜像返回错误页 / 被截断时都会走到这里，换源已自动试过
+  if (/不是安装包|不完整/.test(message)) {
+    return '安装包校验未通过，已自动换源重试仍失败，可改用浏览器下载';
   }
 
   return '下载失败，可换用浏览器下载';
@@ -6037,6 +6046,8 @@ themeQuery?.addEventListener?.('change', () => {
 
 migrateLegacyDraft();
 bindAppHeight();
+// 清掉早期版本用 base64 文本写坏的安装包，避免占空间或被误用
+dropLegacyApk();
 // 初始视图：同步底部导航的选中态与 body 标记
 show('list');
 initAdmin({
