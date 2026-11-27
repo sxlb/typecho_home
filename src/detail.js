@@ -21,6 +21,7 @@ const STATUS_LABELS = {
 
 const STATUS_ACTIONS = {
   approve: { action: 'commentApprove', message: '评论已通过' },
+  waiting: { action: 'commentWaiting', message: '已转为待审核' },
   spam: { action: 'commentSpam', message: '已标记为垃圾' },
 };
 
@@ -60,15 +61,25 @@ let toast = () => {};
 let onBack = () => {};
 let onEdit = () => {};
 let canModerate = () => false;
+let onCommentsChanged = () => {};
 
 /**
- * @param {{onToast?: Function, onBack?: Function, onEdit?: Function, canModerate?: Function}} options
+ * @param {{
+ *   onToast?: Function,
+ *   onBack?: Function,
+ *   onEdit?: Function,
+ *   canModerate?: Function,
+ *   onCommentsChanged?: (payload: {cid: number, commentsNum: number|null}) => void
+ * }} options
  */
 export function initDetail(options = {}) {
   toast = typeof options.onToast === 'function' ? options.onToast : toast;
   onBack = typeof options.onBack === 'function' ? options.onBack : onBack;
   onEdit = typeof options.onEdit === 'function' ? options.onEdit : onEdit;
   canModerate = typeof options.canModerate === 'function' ? options.canModerate : canModerate;
+  onCommentsChanged = typeof options.onCommentsChanged === 'function'
+    ? options.onCommentsChanged
+    : onCommentsChanged;
 
   $('#btn-detail-back').addEventListener('click', () => onBack());
   el.edit.addEventListener('click', () => {
@@ -417,6 +428,11 @@ function createComment(item) {
     actions.appendChild(commentButton('通过', 'approve'));
   }
 
+  // 误点「垃圾」后能退回待审核，不必删了重发
+  if (item.status !== 'waiting') {
+    actions.appendChild(commentButton('待审核', 'waiting'));
+  }
+
   if (item.status !== 'spam') {
     actions.appendChild(commentButton('垃圾', 'spam'));
   }
@@ -451,6 +467,27 @@ function commentButton(label, act, danger = false) {
   button.dataset.cact = act;
   button.textContent = label;
   return button;
+}
+
+/**
+ * 通知外部评论数变化
+ *
+ * 审核接口会返回该文章最新的 commentsNum，直接用它更新列表角标；
+ * 接口没返回时传 null，由外部只刷新待审核角标。
+ *
+ * @param {object} result
+ */
+function notifyCommentsChanged(result) {
+  if (!state.cid) {
+    return;
+  }
+
+  const num = Number(result?.commentsNum);
+
+  onCommentsChanged({
+    cid: state.cid,
+    commentsNum: Number.isFinite(num) ? num : null,
+  });
 }
 
 async function handleCommentClick(event) {
@@ -501,11 +538,15 @@ async function handleCommentClick(event) {
 
   try {
     if (act === 'delete') {
-      await callAdmin('commentDelete', { method: 'POST', body: { coid } });
+      const result = await callAdmin('commentDelete', { method: 'POST', body: { coid } });
+
       toast('评论已删除');
+      notifyCommentsChanged(result);
     } else {
-      await callAdmin(config.action, { method: 'POST', body: { coid } });
+      const result = await callAdmin(config.action, { method: 'POST', body: { coid } });
+
       toast(config.message);
+      notifyCommentsChanged(result);
     }
 
     await loadComments({ reset: true });

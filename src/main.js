@@ -60,6 +60,7 @@ const el = {
   tabbar: $('#tabbar'),
   meServer: $('#me-server'),
   meVersion: $('#me-version'),
+  tabBadge: $('#tab-badge-me'),
   listLoading: $('#list-loading'),
   listSkeleton: $('#list-skeleton'),
   listEmpty: $('#list-empty'),
@@ -483,6 +484,11 @@ function applyAdminEntry() {
   }
 
   setAdminEnabled(ready, reason);
+
+  // 管理能力没了，待审核角标也不该留着
+  if (!ready) {
+    setTabBadge(0);
+  }
 }
 
 // ─── 界面风格 ────────────────────────────────────────────────────────────
@@ -723,6 +729,11 @@ async function loadPosts({ reset = true } = {}) {
     renderList();
     el.listSkeleton.hidden = true;
     el.listLoading.hidden = true;
+
+    // 首屏刷新时顺带更新待审核角标（翻页不重复请求）
+    if (reset) {
+      refreshPendingBadge();
+    }
   } catch (error) {
     if (seq !== listSeq) {
       return;
@@ -1004,6 +1015,11 @@ function createItem({ title, badge = '', time, status = '', unsynced = false, it
   const wrap = document.createElement('div');
   wrap.className = 'post-item';
 
+  // 供评论数同步等操作按 cid 精确定位到行
+  if (item.cid) {
+    wrap.dataset.cid = String(item.cid);
+  }
+
   // status 只在文章列表传：页面列表沿用彩色徽标
   if (status) {
     wrap.classList.add(`status-${status}`);
@@ -1121,6 +1137,7 @@ function buildItemTools(item) {
   const comment = document.createElement('button');
   comment.type = 'button';
   comment.className = 'post-tool';
+  comment.dataset.role = 'comment';
   comment.setAttribute('aria-label', count ? `查看评论，共 ${count} 条` : '查看评论');
   comment.innerHTML = `${COMMENT_ICON}${count ? `<span class="post-tool-count">${count > 99 ? '99+' : count}</span>` : ''}`;
   comment.addEventListener('click', (event) => {
@@ -1154,6 +1171,81 @@ function openPreference() {
   return (getSettings().postOpenMode || DEFAULT_SETTINGS.postOpenMode) === 'edit'
     ? 'edit'
     : 'preview';
+}
+
+/**
+ * 待审核评论角标
+ *
+ * 只在管理模式开启且服务器配置完整时显示；数字来自 overview 的 pendingComments。
+ * 拉取失败保持原状，不弹提示——角标属于锦上添花，不该打断写作。
+ *
+ * @param {number} num
+ */
+function setTabBadge(num) {
+  if (!el.tabBadge) {
+    return;
+  }
+
+  const count = Math.max(0, Number(num) || 0);
+
+  el.tabBadge.hidden = count === 0;
+  el.tabBadge.textContent = count > 99 ? '99+' : String(count);
+}
+
+async function refreshPendingBadge() {
+  if (!adminReady()) {
+    setTabBadge(0);
+    return;
+  }
+
+  try {
+    const data = await callAdmin('overview');
+
+    setTabBadge(Number(data?.pendingComments || 0));
+  } catch {
+    // 网络或权限问题：保留上一次的数字
+  }
+}
+
+/**
+ * 审核评论后同步列表里的评论数
+ *
+ * 后端返回的 commentsNum 是该文章最新总数，比本地加减更可靠。
+ *
+ * @param {number} cid
+ * @param {number} num
+ */
+function syncCommentCount(cid, num) {
+  const item = state.posts.find((post) => Number(post.cid) === Number(cid));
+
+  if (item) {
+    item.comments = num;
+  }
+
+  const tools = el.listItems.querySelectorAll(
+    `.post-item[data-cid="${cid}"] .post-tool[data-role="comment"]`,
+  );
+
+  tools.forEach((tool) => {
+    const count = Math.max(0, Number(num) || 0);
+
+    tool.setAttribute('aria-label', count ? `查看评论，共 ${count} 条` : '查看评论');
+
+    let badge = tool.querySelector('.post-tool-count');
+
+    if (!count) {
+      badge?.remove();
+      return;
+    }
+
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'post-tool-count';
+      tool.appendChild(badge);
+    }
+
+    badge.textContent = count > 99 ? '99+' : String(count);
+  });
 }
 
 /**
@@ -6061,12 +6153,22 @@ initAdmin({
   onOpenLinks: openLinks,
   onOpenStats: openStats,
   onOpenCalendar: openCalendar,
+  // 概览刷新时同步待审核角标，不必再单独请求一次
+  onStats: (data) => setTabBadge(Number(data?.pendingComments || 0)),
 });
 initDetail({
   onToast: toast,
   onBack: closeDetail,
   onEdit: (cid) => openPost(cid),
   canModerate: () => adminReady(),
+  // 审核改了评论数：同步列表角标 + 待审核提醒
+  onCommentsChanged: ({ cid, commentsNum }) => {
+    if (commentsNum != null) {
+      syncCommentCount(cid, commentsNum);
+    }
+
+    refreshPendingBadge();
+  },
 });
 bind();
 
@@ -6074,6 +6176,7 @@ if (isConfigured()) {
   loadPosts();
   // 首页分类筛选项：静默加载，失败不影响列表
   ensureMetas({ silent: true });
+  refreshPendingBadge();
 
   const lastCheck = Number(localStorage.getItem('sxlb.updateCheck') || 0);
   if (Date.now() - lastCheck > 24 * 3600 * 1000) {

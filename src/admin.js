@@ -56,6 +56,8 @@ let onOpenPages = () => {};
 let onOpenLinks = () => {};
 let onOpenStats = () => {};
 let onOpenCalendar = () => {};
+// 概览数据变化时通知外部（用于待审核角标）
+let onStats = () => {};
 
 export function initAdmin(options = {}) {
   toast = typeof options.onToast === 'function' ? options.onToast : toast;
@@ -65,6 +67,7 @@ export function initAdmin(options = {}) {
   onOpenCalendar = typeof options.onOpenCalendar === 'function'
     ? options.onOpenCalendar
     : onOpenCalendar;
+  onStats = typeof options.onStats === 'function' ? options.onStats : onStats;
 
   $('#btn-admin-refresh').addEventListener('click', () => load());
   $('#btn-admin-retry').addEventListener('click', () => load());
@@ -307,6 +310,8 @@ function renderStats(data) {
 
     el.stats.appendChild(card);
   });
+
+  onStats(data);
 }
 
 /**
