@@ -561,6 +561,18 @@ function openStatTarget(key) {
  */
 function openListWithFilter(filter) {
   state.filter = filter;
+  // 搜索词与分类筛选会让「已发布 / 草稿」列表变空，进列表前一并清掉
+  state.query = '';
+  state.category = 0;
+
+  if (el.listSearch) {
+    el.listSearch.value = '';
+  }
+
+  if (el.listCategory) {
+    el.listCategory.value = '';
+  }
+
   resetBatchSelection();
 
   [...el.listFilters.children].forEach((chip) => {
@@ -579,9 +591,11 @@ function openListWithFilter(filter) {
  * 「我的」页管理入口排布
  *
  * compact：一行 5 列；relaxed：两行（3 + 2）；list：纵向列表。
+ *
+ * @param {string} [pref] 设置页预览时直接传下拉的值，不传则读已保存设置
  */
-function applyMeLayout() {
-  const layout = getSettings().meLayout || DEFAULT_SETTINGS.meLayout;
+function applyMeLayout(pref = '') {
+  const layout = pref || getSettings().meLayout || DEFAULT_SETTINGS.meLayout;
 
   document.documentElement.dataset.meLayout = ['relaxed', 'list'].includes(layout)
     ? layout
@@ -674,6 +688,22 @@ function hexToRgba(hex, alpha) {
     value.slice(5, 7),
     16
   )}, ${alpha})`;
+}
+
+/**
+ * 只到日期的短格式
+ *
+ * 相册卡是三列网格，容不下「年月日 14:23」，单独用这个。
+ */
+function formatDay(timestamp) {
+  const date = new Date(timestamp * 1000);
+  const now = new Date();
+
+  if (date.getFullYear() === now.getFullYear()) {
+    return `${date.getMonth() + 1}月${date.getDate()}日`;
+  }
+
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
 /**
@@ -1355,7 +1385,14 @@ async function flushQueue({ silent = true } = {}) {
         const draftKey = item.draftKey || '';
 
         pushHistory(String(result.cid), { title: item.title, text: item.body?.text || '' });
-        removeQueue(item.id);
+
+        // 发送期间用户可能又断网发布了同一篇（upsert 会复用 id）：
+        // 只有队列里仍是这次发送的快照时才删除，否则保留新内容
+        const current = listQueue().find((row) => row.id === item.id);
+
+        if (current && JSON.stringify(current.body) === JSON.stringify(item.body)) {
+          removeQueue(item.id);
+        }
 
         // 已经落库：只清理内容仍是这份快照的本地草稿，
         // 用户断网后继续改过的草稿保留，避免把新内容删掉
@@ -2967,7 +3004,7 @@ function createAlbumCard(item) {
 
   const date = document.createElement('span');
   date.className = 'album-card-date';
-  date.textContent = formatDate(item.created);
+  date.textContent = formatDay(item.created);
 
   card.append(cover, title, date);
 
@@ -3116,11 +3153,15 @@ async function deleteAlbumPost() {
 /* ─── 发照片 ───────────────────────────────────────────────────────────── */
 
 function openAlbumSheet() {
-  if (album.mid === 0) {
-    toast('博客里需要一个缩略名为 image 的分类');
+  // 相册分类 mid 由列表接口返回；首次进入还没拉到数据时用元数据兜底
+  const mid = album.mid || albumCategoryMid();
+
+  if (!mid) {
+    toast(album.loading ? '相册加载中，请稍候' : '博客里需要一个缩略名为 image 的分类');
     return;
   }
 
+  album.mid = mid;
   album.images = [];
   el.albumTitle.value = defaultAlbumTitle();
   el.albumDesc.value = '';
@@ -5546,11 +5587,21 @@ function revertSettingsPreview() {
   styleSelection = settings.style || DEFAULT_SETTINGS.style;
   customPreview = null;
 
+  el.settings.mode.value = settings.editorMode || DEFAULT_SETTINGS.editorMode;
   el.settings.theme.value = settings.theme || DEFAULT_SETTINGS.theme;
   el.settings.size.value = settings.editorFontSize || DEFAULT_SETTINGS.editorFontSize;
   el.settings.postOpen.value = settings.postOpenMode || DEFAULT_SETTINGS.postOpenMode;
   el.settings.adminMode.value = settings.adminMode || DEFAULT_SETTINGS.adminMode;
   el.settings.meLayout.value = settings.meLayout || DEFAULT_SETTINGS.meLayout;
+
+  // 自定义配色也是即时预览，离开时要恢复成已保存的值
+  const custom = { ...DEFAULT_SETTINGS.customTheme, ...(settings.customTheme || {}) };
+  el.settings.accent.value = custom.accent;
+  el.settings.bg.value = custom.bg;
+  el.settings.surface.value = custom.surface;
+  el.settings.radius.value = String(custom.radius);
+  el.settings.radiusValue.textContent = String(custom.radius);
+  el.settings.custom.hidden = styleSelection !== 'custom';
 
   applyStyle(styleSelection);
   applyTheme(settings.theme);
@@ -6267,6 +6318,9 @@ function bind() {
   // 外观切换即时预览，但目前只是预览：不点「保存设置」离开会回滚
   el.settings.theme.addEventListener('change', () => applyTheme(el.settings.theme.value));
   el.settings.size.addEventListener('change', () => applyFontSize(el.settings.size.value));
+  el.settings.meLayout?.addEventListener('change', () => {
+    applyMeLayout(el.settings.meLayout.value);
+  });
 
   // 界面风格：点一下立即换肤，同样需要点「保存设置」才生效到下次启动
   el.settings.style.addEventListener('click', (event) => {

@@ -169,7 +169,12 @@ export async function refreshMeStats() {
     renderStats(state.overview);
     hideStatsHint();
   } catch (error) {
-    showStatsHint(`概览加载失败：${error.message}`);
+    // 已经有过数据就保留旧内容，单次网络抖动不该让整个入口消失
+    if (state.overview && Object.keys(state.overview).length) {
+      hideStatsHint();
+    } else {
+      showStatsHint(`概览加载失败：${error.message}`);
+    }
   } finally {
     state.statsBusy = false;
   }

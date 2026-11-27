@@ -41,7 +41,7 @@ class Admin
     public static function overview(Db $db, int $ownerId = 0): array
     {
         return [
-            'posts' => self::countContents($db, 'post', 'publish'),
+            'posts' => self::countContents($db, 'post', 'publish', time()),
             'drafts' => self::countContents($db, 'post_draft'),
             'comments' => self::countComments($db, null, $ownerId),
             'pendingComments' => self::countComments($db, 'waiting', $ownerId),
@@ -150,19 +150,7 @@ class Admin
         $form = self::buildForm($class, self::savedValues($name));
 
         // 白名单：只接受表单声明过的字段，防止写入任意插件配置
-        foreach ($form->getInputs() as $key => $input) {
-            if (!array_key_exists($key, $values)) {
-                continue;
-            }
-
-            $value = $values[$key];
-
-            if (self::typeOf($input) === 'checkbox') {
-                $_POST[$key] = is_array($value) ? array_values(array_map('strval', $value)) : [];
-            } elseif (!is_array($value)) {
-                $_POST[$key] = (string) $value;
-            }
-        }
+        $settings = self::applyValues($form, $values);
 
         $errors = $form->validate();
 
@@ -171,7 +159,7 @@ class Admin
             throw new \RuntimeException(is_string($first) ? $first : '配置校验失败');
         }
 
-        PluginsEdit::configPlugin($name, $form->getAllRequest());
+        PluginsEdit::configPlugin($name, $settings);
 
         $form = self::buildForm($class, self::savedValues($name));
 
@@ -378,20 +366,17 @@ class Admin
         $theme = (string) Options::alloc()->theme;
         $form = self::buildThemeForm($theme);
 
-        // 只接受表单声明过的字段，Checkbox 统一转数组
+        // 先回填已保存值：客户端只提交表单里的字段，其余项不该被默认值覆盖
+        $saved = self::themeValues($theme);
+
         foreach ($form->getInputs() as $key => $input) {
-            if (!array_key_exists($key, $values)) {
-                continue;
-            }
-
-            $value = $values[$key];
-
-            if (self::typeOf($input) === 'checkbox') {
-                $_POST[$key] = is_array($value) ? array_values(array_map('strval', $value)) : [];
-            } elseif (!is_array($value)) {
-                $_POST[$key] = (string) $value;
+            if (array_key_exists($key, $saved)) {
+                $input->value($saved[$key]);
             }
         }
+
+        // 白名单：只接受表单声明过的字段
+        $settings = self::applyValues($form, $values);
 
         $errors = $form->validate();
 
@@ -399,8 +384,6 @@ class Admin
             $first = reset($errors);
             throw new \RuntimeException(is_string($first) ? $first : '配置校验失败');
         }
-
-        $settings = $form->getAllRequest();
 
         if (function_exists('themeConfigHandle')) {
             ob_start();
@@ -1506,14 +1489,23 @@ class Admin
     }
 
 
-    private static function countContents(Db $db, string $type, ?string $status = null): int
-    {
+    private static function countContents(
+        Db $db,
+        string $type,
+        ?string $status = null,
+        ?int $before = null
+    ): int {
         $query = $db->select(['COUNT(table.contents.cid)' => 'num'])
             ->from('table.contents')
             ->where('type = ?', $type);
 
         if ($status !== null) {
             $query->where('status = ?', $status);
+        }
+
+        // 定时稿也是 status=publish，统计「已发布」时要排除，口径与列表一致
+        if ($before !== null) {
+            $query->where('created <= ?', $before);
         }
 
         $row = $db->fetchObject($query);
@@ -1645,6 +1637,42 @@ class Admin
         }
 
         return $form;
+    }
+
+    /**
+     * 把提交的值写回表单，并读出最终配置
+     *
+     * 不能用 $form->getAllRequest()：Typecho 的 Request::get() 把空字符串当成「未提交」，
+     * 文本框无法清空；Checkbox 的默认值不是数组时，提交的数组也会被丢弃。
+     * 这里直接写回 Element 再取值，空值与多选都能正确保存。
+     *
+     * @return array<string, mixed> 字段名 => 最终值
+     */
+    private static function applyValues(Form $form, array $values): array
+    {
+        $settings = [];
+
+        foreach ($form->getInputs() as $key => $input) {
+            $type = self::typeOf($input);
+
+            if ($type === null) {
+                continue;
+            }
+
+            if (array_key_exists($key, $values)) {
+                $value = $values[$key];
+
+                if ($type === 'checkbox') {
+                    $input->value(is_array($value) ? array_values(array_map('strval', $value)) : []);
+                } elseif (!is_array($value)) {
+                    $input->value((string) $value);
+                }
+            }
+
+            $settings[(string) $key] = self::valueOf($input, $type);
+        }
+
+        return $settings;
     }
 
     /**
@@ -1850,6 +1878,10 @@ class Admin
         }
 
         foreach ($input->container->getItems() as $item) {
+            if (!($item instanceof Layout)) {
+                continue;
+            }
+
             if ($item->getAttribute('class') === 'description') {
                 return self::textOf($item);
             }
