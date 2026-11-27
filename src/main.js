@@ -677,20 +677,25 @@ function hexToRgba(hex, alpha) {
 }
 
 /**
- * 列表里的时间：只到日期
+ * 列表里的时间：日期 + 时分
  *
- * 时分秒对浏览列表没有帮助，反而把每行撑得更长；
- * 需要具体时间时进预览页或编辑器看。
+ * 今天只显示「今天 14:23」，同年省略年份，跨年补全年份。
  */
 function formatDate(timestamp) {
   const date = new Date(timestamp * 1000);
   const now = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 
-  if (date.getFullYear() === now.getFullYear()) {
-    return `${date.getMonth() + 1}月${date.getDate()}日`;
+  if (date.toDateString() === now.toDateString()) {
+    return `今天 ${clock}`;
   }
 
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+  if (date.getFullYear() === now.getFullYear()) {
+    return `${date.getMonth() + 1}月${date.getDate()}日 ${clock}`;
+  }
+
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${clock}`;
 }
 
 function formatDateTime(timestamp) {
@@ -5977,6 +5982,7 @@ function bind() {
   $('#me-settings').addEventListener('click', openSettings);
   $('#btn-shuoshuo-refresh').addEventListener('click', () => loadShuoshuo({ reset: true }));
   $('#btn-shuoshuo-new').addEventListener('click', () => openShuoshuoSheet());
+  $('#btn-shuoshuo-fab').addEventListener('click', () => openShuoshuoSheet());
   $('#shuoshuo-sheet-close').addEventListener('click', closeShuoshuoSheet);
   $('#shuoshuo-cancel').addEventListener('click', closeShuoshuoSheet);
   el.shuoshuoMask.addEventListener('click', closeShuoshuoSheet);
@@ -5988,6 +5994,7 @@ function bind() {
   });
   $('#btn-album-refresh').addEventListener('click', () => loadAlbum({ reset: true }));
   $('#btn-album-new').addEventListener('click', openAlbumSheet);
+  $('#btn-album-fab').addEventListener('click', openAlbumSheet);
   $('#album-sheet-close').addEventListener('click', closeAlbumSheet);
   $('#album-cancel').addEventListener('click', closeAlbumSheet);
   el.albumSheetMask.addEventListener('click', closeAlbumSheet);
