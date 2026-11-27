@@ -80,6 +80,11 @@ export function initDetail(options = {}) {
     loadComments({ reset: true });
   });
   el.more.addEventListener('click', () => {
+    // 请求进行中先不加页码，否则失败重试会跳过一页
+    if (state.busy) {
+      return;
+    }
+
     state.page += 1;
     loadComments({ reset: false });
   });
@@ -157,7 +162,7 @@ export async function openPostDetail(cid) {
     state.retry = () => openPostDetail(cid);
     prepareComments('评论');
 
-    if (!el.comments.hidden) {
+    if (canModerate()) {
       await loadComments({ reset: true });
     }
   } catch (error) {
@@ -210,7 +215,7 @@ export async function openShuoshuoDetail(item) {
 
   prepareComments('回复');
 
-  if (!el.comments.hidden) {
+  if (canModerate()) {
     await loadComments({ reset: true });
   }
 }
@@ -280,18 +285,33 @@ function showError(message) {
 
 // ─── 评论 ────────────────────────────────────────────────────────────────
 
+/**
+ * 准备评论区
+ *
+ * 评论列表走管理接口，未开启管理模式时必须说明原因：
+ * 否则预览页下方一片空白，用户会以为这篇文章没有评论。
+ *
+ * @param {string} label 「评论」或「回复」
+ */
 function prepareComments(label) {
-  const allowed = canModerate();
-  el.comments.hidden = !allowed;
+  el.comments.hidden = false;
   el.commentsLabel.textContent = label;
+  el.commentEmpty.hidden = true;
+  el.more.hidden = true;
 
-  if (!allowed) {
-    el.commentEmpty.hidden = true;
+  if (canModerate()) {
+    return;
   }
+
+  // 按钮只对能审核的人有意义，否则点了必然失败
+  el.commentList.innerHTML = '';
+  el.commentCount.textContent = '';
+  el.commentEmpty.hidden = false;
+  el.commentEmpty.textContent = '开启「管理模式」后可查看与审核评论';
 }
 
 async function loadComments({ reset }) {
-  if (el.comments.hidden || state.busy) {
+  if (!canModerate() || state.busy) {
     return;
   }
 

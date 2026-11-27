@@ -5450,6 +5450,11 @@ function describeUpdateError(error) {
     return '安装包校验未通过，已自动换源重试仍失败，可改用浏览器下载';
   }
 
+  // 写盘失败通常是缓存空间不足，磁盘满了会直接抛 IO 异常
+  if (/写入失败|ENOSPC|No space|IO/i.test(message)) {
+    return '安装包保存失败，请清理手机存储空间后重试';
+  }
+
   return '下载失败，可换用浏览器下载';
 }
 
