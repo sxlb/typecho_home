@@ -29,7 +29,7 @@ export const DEFAULT_SETTINGS = {
   },
   // 管理模式：on 显示入口 / off 隐藏入口（服务端还需开启「管理接口」）
   adminMode: 'off',
-  // 「我的」页管理入口排布：compact 一行 5 列 / relaxed 两行（3 + 2）
+  // 「我的」页管理入口排布：compact 一行 5 列 / relaxed 两行（3 + 2）/ list 纵向列表
   meLayout: 'compact',
   // 打开已发布文章：preview 先看预览 / edit 直接进编辑器
   postOpenMode: 'preview',

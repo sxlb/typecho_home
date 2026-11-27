@@ -4192,6 +4192,49 @@ body.has-tabbar .toast {
   grid-column: span 3;
 }
 
+/* 列表模式：一行一个入口，把「我的」页撑满 */
+:root[data-me-layout='list'] .me-grid {
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+:root[data-me-layout='list'] .me-tile {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 6px;
+  box-shadow: none;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+:root[data-me-layout='list'] .me-tile:last-child {
+  border-bottom: none;
+}
+
+:root[data-me-layout='list'] .me-tile::after {
+  content: '›';
+  margin-left: auto;
+  color: var(--ink-3);
+  font-size: 18px;
+  line-height: 1;
+}
+
+:root[data-me-layout='list'] .me-tile-icon {
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  border-radius: 9px;
+}
+
+:root[data-me-layout='list'] .me-tile-title {
+  font-size: 14px;
+}
+
 .me-tile {
   display: flex;
   flex-direction: column;

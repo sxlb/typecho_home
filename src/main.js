@@ -578,12 +578,14 @@ function openListWithFilter(filter) {
 /**
  * 「我的」页管理入口排布
  *
- * compact：一行 5 列；relaxed：两行（3 + 2）。
+ * compact：一行 5 列；relaxed：两行（3 + 2）；list：纵向列表。
  */
 function applyMeLayout() {
   const layout = getSettings().meLayout || DEFAULT_SETTINGS.meLayout;
 
-  document.documentElement.dataset.meLayout = layout === 'relaxed' ? 'relaxed' : 'compact';
+  document.documentElement.dataset.meLayout = ['relaxed', 'list'].includes(layout)
+    ? layout
+    : 'compact';
 }
 
 // ─── 界面风格 ────────────────────────────────────────────────────────────
@@ -674,15 +676,15 @@ function hexToRgba(hex, alpha) {
   )}, ${alpha})`;
 }
 
+/**
+ * 列表里的时间：只到日期
+ *
+ * 时分秒对浏览列表没有帮助，反而把每行撑得更长；
+ * 需要具体时间时进预览页或编辑器看。
+ */
 function formatDate(timestamp) {
   const date = new Date(timestamp * 1000);
   const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
-  const pad = (value) => String(value).padStart(2, '0');
-
-  if (isToday) {
-    return `今天 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
 
   if (date.getFullYear() === now.getFullYear()) {
     return `${date.getMonth() + 1}月${date.getDate()}日`;
