@@ -24,6 +24,7 @@ class Comment
      * @param int $cid 只查某篇文章下的评论，0 表示不限
      * @param string $keyword 按作者 / 内容 / 文章标题模糊匹配
      * @param int $parent 只查某条评论下的回复（说说详情的评论），-1 表示不限
+     * @param int $ownerId 站长 UID，用于排除时光机的说说本身
      * @return array{items: array, total: int, page: int, size: int}
      */
     public static function listing(
@@ -33,7 +34,8 @@ class Comment
         string $status,
         int $cid = 0,
         string $keyword = '',
-        int $parent = -1
+        int $parent = -1,
+        int $ownerId = 0
     ): array {
         $filter = self::normalizeStatus($status);
 
@@ -61,6 +63,19 @@ class Comment
 
         self::applyFilter($countQuery, $filter, $cid, $parent);
         self::applyFilter($rowsQuery, $filter, $cid, $parent);
+
+        // 时光机的说说本身也是 comments 里的顶层记录，这里只保留真正的评论；
+        // 说说下的回复（parent = coid）不受影响。
+        $crossId = Shuoshuo::pageId($db);
+        $ownerId = max(1, $ownerId);
+
+        if ($crossId > 0) {
+            $exclude = 'NOT (table.comments.cid = ? AND table.comments.parent = 0 '
+                . 'AND table.comments.authorId = ?)';
+
+            $countQuery->where($exclude, $crossId, $ownerId);
+            $rowsQuery->where($exclude, $crossId, $ownerId);
+        }
 
         // 搜索：作者、内容、所属文章标题，转义 LIKE 通配符避免用户输入 % _ 被当成模式
         $keyword = trim($keyword);

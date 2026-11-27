@@ -801,7 +801,9 @@ class Action extends Widget implements ActionInterface
                     $this->intParam('cid'),
                     (string) $this->param('keyword', ''),
                     // 缺省 -1 表示不限；说说详情传 parent=coid，文章详情传 0 只看顶层
-                    $this->intParam('parent', -1)
+                    $this->intParam('parent', -1),
+                    // 站长 UID：列表里排除时光机的说说本身
+                    max(1, (int) ($this->config->authorId ?? 1))
                 ));
                 break;
             case 'commentApprove':
