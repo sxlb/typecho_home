@@ -186,6 +186,112 @@ export function migrateLegacyDraft() {
   localStorage.removeItem(`${DRAFT_PREFIX}new`);
 }
 
+/* ─── 待发布队列（断网时暂存，联网后自动重试） ─────────────── */
+
+const QUEUE_KEY = 'sxlb.queue';
+const MAX_QUEUE = 20;
+
+/**
+ * 读取待发布队列，按入队时间升序（先入队先重试）
+ *
+ * @returns {Array<{id:string,draftKey:string,body:object,isDraft:boolean,title:string,createdAt:number,attempts:number,error:string}>}
+ */
+export function listQueue() {
+  const list = readJson(QUEUE_KEY);
+
+  if (!Array.isArray(list)) {
+    return [];
+  }
+
+  return list
+    .filter((item) => item && item.body && typeof item.body === 'object')
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+}
+
+function writeQueue(list) {
+  return safeSet(QUEUE_KEY, JSON.stringify(list.slice(-MAX_QUEUE)));
+}
+
+/**
+ * 入队 / 更新
+ *
+ * 同一篇（draftKey 相同）只保留一条并覆盖为最新内容，
+ * 否则断网期间反复点发布会在队列里堆出多条重复文章。
+ *
+ * @param {{draftKey?:string,body:object,isDraft:boolean,title:string}} data
+ * @returns {Array} 最新队列
+ */
+export function upsertQueue(data) {
+  const list = listQueue();
+  const draftKey = String(data.draftKey || '');
+  const index = draftKey ? list.findIndex((item) => item.draftKey === draftKey) : -1;
+  const next = {
+    id: index >= 0 ? list[index].id : `q${Date.now().toString(36)}`,
+    draftKey,
+    body: data.body,
+    isDraft: Boolean(data.isDraft),
+    title: String(data.title || ''),
+    createdAt: index >= 0 ? list[index].createdAt : Date.now(),
+    attempts: 0,
+    error: '',
+  };
+
+  if (index >= 0) {
+    list[index] = next;
+  } else {
+    list.push(next);
+  }
+
+  writeQueue(list);
+
+  return listQueue();
+}
+
+/**
+ * 记录一次重试失败，保留队列项等下次联网
+ *
+ * @param {string} id
+ * @param {string} message
+ */
+export function failQueue(id, message) {
+  const list = listQueue();
+  const item = list.find((row) => row.id === id);
+
+  if (item) {
+    item.attempts = (item.attempts || 0) + 1;
+    item.error = String(message || '');
+    writeQueue(list);
+  }
+
+  return listQueue();
+}
+
+export function removeQueue(id) {
+  const list = listQueue().filter((item) => item.id !== id);
+  writeQueue(list);
+
+  return list;
+}
+
+/**
+ * 按草稿键移除：手动发布成功后，清掉同一篇的旧队列项，避免重复发送
+ *
+ * @param {string} draftKey
+ */
+export function removeQueueByDraftKey(draftKey) {
+  const key = String(draftKey || '');
+
+  if (!key) {
+    return listQueue();
+  }
+
+  return removeQueue(listQueue().find((item) => item.draftKey === key)?.id || '');
+}
+
+export function clearQueue() {
+  localStorage.removeItem(QUEUE_KEY);
+}
+
 /* ─── 片段库（本机常用模板：开头、声明、SEO 描述等） ─────────── */
 
 const SNIPPET_KEY = 'sxlb.snippets';

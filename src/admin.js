@@ -56,6 +56,8 @@ let onOpenPages = () => {};
 let onOpenLinks = () => {};
 let onOpenStats = () => {};
 let onOpenCalendar = () => {};
+// 时光机与底部 Tab 是同一个视图，这里只负责跳出管理页
+let onOpenShuoshuo = () => {};
 // 概览数据变化时通知外部（用于待审核角标）
 let onStats = () => {};
 
@@ -67,6 +69,9 @@ export function initAdmin(options = {}) {
   onOpenCalendar = typeof options.onOpenCalendar === 'function'
     ? options.onOpenCalendar
     : onOpenCalendar;
+  onOpenShuoshuo = typeof options.onOpenShuoshuo === 'function'
+    ? options.onOpenShuoshuo
+    : onOpenShuoshuo;
   onStats = typeof options.onStats === 'function' ? options.onStats : onStats;
 
   $('#btn-admin-refresh').addEventListener('click', () => load());
@@ -482,6 +487,11 @@ function renderContent() {
       description: '关于、友链、时光机等自定义页面',
     },
     {
+      key: 'shuoshuo',
+      title: '时光机说说',
+      description: '发布、编辑与删除说说',
+    },
+    {
       key: 'links',
       title: '友情链接',
       description: '增删改友链、设置显示位置与排序',
@@ -529,6 +539,11 @@ function renderContent() {
 
       if (entry.key === 'links') {
         onOpenLinks();
+        return;
+      }
+
+      if (entry.key === 'shuoshuo') {
+        onOpenShuoshuo();
         return;
       }
 

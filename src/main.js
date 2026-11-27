@@ -20,6 +20,12 @@ import {
   readHistory,
   clearHistory,
   migrateLegacyDraft,
+  listQueue,
+  upsertQueue,
+  failQueue,
+  removeQueue,
+  removeQueueByDraftKey,
+  clearQueue,
 } from './local.js';
 import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
@@ -63,6 +69,10 @@ const el = {
   tabBadge: $('#tab-badge-me'),
   listLoading: $('#list-loading'),
   listSkeleton: $('#list-skeleton'),
+  queueBar: $('#queue-bar'),
+  queueText: $('#queue-text'),
+  queueRetry: $('#queue-retry'),
+  queueClear: $('#queue-clear'),
   listEmpty: $('#list-empty'),
   emptyTitle: $('#list-empty-title'),
   emptyDesc: $('#list-empty-desc'),
@@ -733,6 +743,11 @@ async function loadPosts({ reset = true } = {}) {
     // 首屏刷新时顺带更新待审核角标（翻页不重复请求）
     if (reset) {
       refreshPendingBadge();
+
+      // 能拉到列表说明网络已恢复，顺带补发队列；60 秒内不重复尝试
+      if (listQueue().length && Date.now() - lastFlushAt > 60000) {
+        flushQueue({ silent: true });
+      }
     }
   } catch (error) {
     if (seq !== listSeq) {
@@ -1171,6 +1186,153 @@ function openPreference() {
   return (getSettings().postOpenMode || DEFAULT_SETTINGS.postOpenMode) === 'edit'
     ? 'edit'
     : 'preview';
+}
+
+// ─── 待发布队列 ──────────────────────────────────────────────────────────
+
+// 同一时间只跑一轮重试，避免启动、联网事件与列表刷新重复触发
+let queueBusy = false;
+let lastFlushAt = 0;
+let queueClearArmed = false;
+let queueClearTimer = 0;
+
+/** 队列条：告诉用户还有内容没发出去 */
+function renderQueueBar() {
+  if (!el.queueBar) {
+    return;
+  }
+
+  const list = listQueue();
+
+  el.queueBar.hidden = list.length === 0;
+
+  if (!list.length) {
+    return;
+  }
+
+  const title = list[0].title || '未命名';
+  const more = list.length > 1 ? ` 等 ${list.length} 篇` : '';
+  const hint = list[0].error ? '上次重试失败，可再试' : '联网后自动重试';
+
+  el.queueText.textContent = `待发布：${title}${more} · ${hint}`;
+}
+
+function updateQueueButtons(busy) {
+  [el.queueRetry, el.queueClear].forEach((button) => {
+    if (button) {
+      button.disabled = busy;
+    }
+  });
+
+  if (el.queueRetry) {
+    el.queueRetry.textContent = busy ? '发送中…' : '重试';
+  }
+}
+
+/**
+ * 依次重试待发布队列
+ *
+ * 遇到第一条失败就停：大概率仍然没网，继续请求只会再堆几个超时。
+ *
+ * @param {{silent?: boolean}} options silent 为 true 时只在补发后提示
+ */
+async function flushQueue({ silent = true } = {}) {
+  if (queueBusy || !isConfigured()) {
+    return;
+  }
+
+  const list = listQueue();
+
+  renderQueueBar();
+
+  if (!list.length) {
+    return;
+  }
+
+  queueBusy = true;
+  lastFlushAt = Date.now();
+  updateQueueButtons(true);
+
+  let sent = 0;
+  let error = '';
+
+  try {
+    for (const item of list) {
+      try {
+        const result = await call('save', { method: 'POST', body: item.body });
+        const draftKey = item.draftKey || '';
+
+        pushHistory(String(result.cid), { title: item.title, text: item.body?.text || '' });
+        removeQueue(item.id);
+
+        // 已经落库：只清理内容仍是这份快照的本地草稿，
+        // 用户断网后继续改过的草稿保留，避免把新内容删掉
+        if (draftKey) {
+          const draft = readDraft(draftKey);
+          const same = !draft
+            || (String(draft.text || '') === String(item.body.text || '')
+              && String(draft.title || '') === String(item.body.title || ''));
+
+          if (same) {
+            removeDraft(draftKey);
+
+            if (draftKey !== String(result.cid)) {
+              clearHistory(draftKey);
+            }
+          }
+        }
+
+        sent += 1;
+      } catch (err) {
+        failQueue(item.id, err.message);
+        error = err.message;
+        break;
+      }
+    }
+  } finally {
+    queueBusy = false;
+    updateQueueButtons(false);
+    renderQueueBar();
+  }
+
+  if (sent && state.view === 'list' && !state.listLoading) {
+    loadPosts({ reset: true });
+  }
+
+  if (sent) {
+    toast(silent ? `已自动补发 ${sent} 篇` : `已补发 ${sent} 篇`);
+  } else if (!silent && error) {
+    toast(`重试失败：${error}`);
+  }
+}
+
+/** 队列条交互：手动重试 + 二次确认清空 */
+function bindQueue() {
+  el.queueRetry?.addEventListener('click', () => flushQueue({ silent: false }));
+
+  if (!el.queueClear) {
+    return;
+  }
+
+  el.queueClear.addEventListener('click', () => {
+    if (!queueClearArmed) {
+      queueClearArmed = true;
+      el.queueClear.textContent = '确认清空';
+      window.clearTimeout(queueClearTimer);
+      queueClearTimer = window.setTimeout(() => {
+        queueClearArmed = false;
+        el.queueClear.textContent = '清空';
+      }, 3000);
+      return;
+    }
+
+    window.clearTimeout(queueClearTimer);
+    queueClearArmed = false;
+    el.queueClear.textContent = '清空';
+    clearQueue();
+    renderQueueBar();
+    toast('已清空待发布队列');
+  });
 }
 
 /**
@@ -4982,6 +5144,11 @@ async function submit(isDraft) {
     removeDraft(previousKey);
     removeDraft(String(result.cid));
 
+    // 手动发布成功，清掉同一篇的待发项，避免联网时重复发送
+    removeQueueByDraftKey(previousKey);
+    removeQueueByDraftKey(String(result.cid));
+    renderQueueBar();
+
     // 新文章的草稿键（draft-xxx）发布后作废，它的历史版本也一并清掉，
     // 否则每次「新建 → 发布」都会在 localStorage 留下一份无用快照
     if (previousKey && previousKey !== String(result.cid)) {
@@ -4994,7 +5161,7 @@ async function submit(isDraft) {
     clearTimeout(state.autosaveTimer);
     state.draftKey = '';
 
-    // 从相册 / 日历进入的编辑，保存后回来源视图并刷新，而不是跳回首页列表
+    // 从相册 / 日历 / 预览页进入的编辑，保存后回来源视图并刷新，而不是跳回首页列表
     if (state.returnView) {
       const view = state.returnView;
       state.returnView = '';
@@ -5003,6 +5170,14 @@ async function submit(isDraft) {
         show('album');
         await loadAlbum({ reset: true });
         $('#album-body').scrollTop = 0;
+      } else if (view === 'detail') {
+        // 回预览页：正文与评论都重新拉一遍，避免看到旧内容
+        state.detailFrom = 'list';
+        show('detail');
+        await openPostDetail(state.cid);
+      } else if (!calendar.month) {
+        // 日历还没初始化过（首次从日历进编辑就发布），交给标准入口设置月份
+        openCalendar();
       } else {
         show('calendar');
         await loadCalendar();
@@ -5020,6 +5195,20 @@ async function submit(isDraft) {
       toast('已发布');
     }
   } catch (error) {
+    // 断网 / 超时：内容进待发队列，联网后自动重试，不用用户守着再点一次
+    if (error.network) {
+      upsertQueue({
+        draftKey: state.draftKey,
+        body,
+        isDraft,
+        title,
+      });
+      renderQueueBar();
+      closeSheet();
+      toast('网络不可用，已加入待发队列，联网后自动重试');
+      return;
+    }
+
     toast(error.message);
   } finally {
     button.disabled = false;
@@ -6153,6 +6342,8 @@ initAdmin({
   onOpenLinks: openLinks,
   onOpenStats: openStats,
   onOpenCalendar: openCalendar,
+  // 时光机与底部 Tab 共用视图，离开管理页即可
+  onOpenShuoshuo: () => openShuoshuo(),
   // 概览刷新时同步待审核角标，不必再单独请求一次
   onStats: (data) => setTabBadge(Number(data?.pendingComments || 0)),
 });
@@ -6171,12 +6362,19 @@ initDetail({
   },
 });
 bind();
+bindQueue();
 
 if (isConfigured()) {
   loadPosts();
   // 首页分类筛选项：静默加载，失败不影响列表
   ensureMetas({ silent: true });
   refreshPendingBadge();
+  // 上次断网留下的待发内容，启动即尝试补发
+  renderQueueBar();
+  flushQueue({ silent: true });
+
+  // 网络恢复时补发，不必等用户回到列表手动刷新
+  window.addEventListener('online', () => flushQueue({ silent: true }));
 
   const lastCheck = Number(localStorage.getItem('sxlb.updateCheck') || 0);
   if (Date.now() - lastCheck > 24 * 3600 * 1000) {

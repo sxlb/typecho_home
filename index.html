@@ -44,6 +44,14 @@
             </button>
           </div>
         </header>
+        <!-- 待发布队列：断网时暂存的发布请求，联网后自动重试 -->
+        <div class="queue-bar" id="queue-bar" hidden>
+          <span class="queue-text" id="queue-text"></span>
+          <div class="queue-actions">
+            <button class="queue-btn" id="queue-retry" type="button">重试</button>
+            <button class="queue-btn" id="queue-clear" type="button">清空</button>
+          </div>
+        </div>
         <div class="list-head">
           <h1 class="list-title" id="list-title">全部文章</h1>
           <span class="list-count" id="list-count"></span>

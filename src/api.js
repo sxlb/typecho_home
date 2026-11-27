@@ -142,9 +142,13 @@ async function send(url, options, path, rawBody) {
     // 否则弱网下 text() 一直挂着会让上传队列永远停在「上传中」
     text = await response.text();
   } catch (error) {
-    throw new Error(
+    const failure = new Error(
       error.name === 'AbortError' ? '请求超时，请检查网络后重试' : '网络请求失败，请检查服务器地址与网络',
     );
+
+    // 标记「没拿到服务端响应」：发布流程据此判断能否进待发队列
+    failure.network = true;
+    throw failure;
   } finally {
     clearTimeout(timer);
   }
