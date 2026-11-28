@@ -20,14 +20,10 @@
     <div id="app">
       <!-- 文章列表 -->
       <section id="view-list" class="view">
-        <header class="topbar">
-          <div class="brand">
-            <span class="brand-mark" aria-hidden="true">
-              <svg viewBox="0 0 32 32" width="19" height="19" fill="currentColor"><use href="#mo-mark" /></svg>
-            </span>
-            <h1>淡墨</h1>
-          </div>
-          <div class="topbar-actions">
+        <div class="list-head">
+          <h1 class="list-title" id="list-title">全部文章</h1>
+          <span class="list-count" id="list-count"></span>
+          <div class="list-head-actions">
             <button class="icon-btn" id="btn-select" aria-label="批量选择">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10 6h10M10 12h10M10 18h10" />
@@ -43,7 +39,7 @@
               </svg>
             </button>
           </div>
-        </header>
+        </div>
         <!-- 待发布队列：断网时暂存的发布请求，联网后自动重试 -->
         <div class="queue-bar" id="queue-bar" hidden>
           <span class="queue-text" id="queue-text"></span>
@@ -51,10 +47,6 @@
             <button class="queue-btn" id="queue-retry" type="button">重试</button>
             <button class="queue-btn" id="queue-clear" type="button">清空</button>
           </div>
-        </div>
-        <div class="list-head">
-          <h1 class="list-title" id="list-title">全部文章</h1>
-          <span class="list-count" id="list-count"></span>
         </div>
         <div class="list-tools">
           <div class="list-search-row">
@@ -359,11 +351,21 @@
             </div>
           </div>
 
-          <p class="me-version">
-            <button class="me-version-btn" type="button" id="me-check-update">检查更新</button>
-            <span class="me-version-sep">·</span>
-            <span id="me-version"></span>
-          </p>
+          <div class="me-links">
+            <button class="me-link" type="button" id="me-check-update">
+              <span>检查更新</span>
+              <span class="me-link-value" id="me-version"></span>
+              <span class="me-link-arrow" aria-hidden="true">›</span>
+            </button>
+            <button class="me-link" type="button" id="me-about">
+              <span>关于淡墨</span>
+              <span class="me-link-arrow" aria-hidden="true">›</span>
+            </button>
+            <button class="me-link" type="button" id="me-feedback">
+              <span>意见反馈</span>
+              <span class="me-link-arrow" aria-hidden="true">›</span>
+            </button>
+          </div>
         </main>
       </section>
 

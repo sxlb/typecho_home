@@ -71,24 +71,26 @@
 }
 
 /* 柔和层次：灰绿底、大圆角、带绿调的柔和投影 */
+/* 柔和：暖纸底、降饱和主色，阴影用中性深色避免卡片发青 */
 :root[data-style='soft'] {
-  --bg: #f2f5f4;
-  --surface: #ffffff;
-  --ink: #16211d;
-  --ink-2: #4e5a55;
-  --ink-3: #6c7773;
-  --line: #e3e9e6;
-  --accent: #2e7d6b;
-  --accent-soft: #e6f2ee;
+  --bg: #f4f2ed;
+  --surface: #fffdfa;
+  --ink: #1c1a17;
+  --ink-2: #55504a;
+  /* 12–13px 小字在暖纸底上仍需 ≥4.5:1 */
+  --ink-3: #6b655f;
+  --line: #e6e1d8;
+  --accent: #2b6b5c;
+  --accent-soft: rgba(43, 107, 92, 0.1);
   --info: #3d6f9e;
   --warn: #b8802f;
   --danger: #c2453d;
-  --topbar: rgba(242, 245, 244, 0.92);
-  --hover: #e9efec;
-  --field: #fbfdfc;
-  --field-focus: #ffffff;
-  --radius: 18px;
-  --shadow: 0 1px 2px rgba(22, 33, 29, 0.04), 0 6px 20px rgba(31, 111, 92, 0.08);
+  --topbar: rgba(244, 242, 237, 0.92);
+  --hover: #ece7df;
+  --field: #faf8f3;
+  --field-focus: #fffdfa;
+  --radius: 16px;
+  --shadow: 0 1px 2px rgba(28, 26, 23, 0.04), 0 8px 24px rgba(28, 26, 23, 0.06);
 }
 
 /* 高对比编辑：白底、黑描边、亮橙强调、硬边无阴影 */
@@ -171,7 +173,6 @@
 }
 
 /* 纸感风格：标题换成衬线，靠系统字体优雅降级 */
-:root[data-style='paper'] .brand h1,
 :root[data-style='paper'] .post-title,
 :root[data-style='paper'] .panel-title,
 :root[data-style='paper'] .admin-section-title,
@@ -271,24 +272,7 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: #fff;
-}
-
 /* 墨迹标识：矢量图随 currentColor 变色，深浅色都不用另配图片 */
-.brand-mark svg,
 .me-avatar svg {
   display: block;
 }
@@ -300,13 +284,6 @@ body {
   overflow: hidden;
 }
 
-.brand h1 {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
 .topbar-actions {
   display: flex;
   align-items: center;
@@ -316,11 +293,11 @@ body {
 .icon-btn {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   border: none;
-  border-radius: 11px;
+  border-radius: 12px;
   background: transparent;
   color: var(--ink-2);
 }
@@ -336,7 +313,10 @@ body {
 }
 
 .text-btn {
-  padding: 8px 6px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 8px;
   border: none;
   background: transparent;
   color: var(--ink-2);
@@ -360,7 +340,8 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px 16px calc(104px + env(safe-area-inset-bottom));
+  /* 底部留白要压过「导航 56 + 间距 + 加号 54」，否则最后一条会被加号盖住 */
+  padding: 12px 16px calc(136px + env(safe-area-inset-bottom));
   -webkit-overflow-scrolling: touch;
 }
 
@@ -426,15 +407,15 @@ body {
   align-items: center;
   gap: 4px;
   width: 100%;
-  margin-bottom: 8px;
-  padding: 12px 8px 12px 20px;
+  padding: 12px 2px 12px 14px;
   text-align: left;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: transparent;
+  border: none;
+  /* 连续行 + 分隔线：比「每张都带阴影的卡片」更像一列可扫读的列表 */
+  border-bottom: 1px solid var(--line);
   font-family: inherit;
-  transition: transform 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s ease;
 }
 
 .post-main {
@@ -451,11 +432,11 @@ body {
 .post-more {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   flex: 0 0 auto;
   border: none;
-  border-radius: 10px;
+  border-radius: 12px;
   background: transparent;
   color: var(--ink-3);
   font-size: 17px;
@@ -467,7 +448,7 @@ body {
 }
 
 .post-item:active {
-  transform: scale(0.985);
+  background: var(--hover);
 }
 
 .post-title {
@@ -527,8 +508,8 @@ body {
 }
 
 .post-item.selected {
-  border-color: var(--accent);
   background: var(--accent-soft);
+  border-bottom-color: var(--accent);
 }
 
 .post-item.selected .post-check {
@@ -833,7 +814,7 @@ body {
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.5);
   color: #fff;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1.5;
   text-align: center;
 }
@@ -841,7 +822,7 @@ body {
 .album-card-title {
   overflow: hidden;
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.4;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -981,7 +962,7 @@ body {
   margin: 0;
   padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
   color: #b9b9b9;
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: center;
 }
 
@@ -1758,7 +1739,7 @@ body {
   gap: 7px;
   margin: 0 2px 9px;
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -1811,7 +1792,7 @@ body {
 .settings-note {
   margin: 0;
   color: var(--ink-3);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1819,7 +1800,7 @@ body {
   width: auto;
   max-width: 140px;
   padding: 9px 10px;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 
 /* 密钥输入：右侧「显示 / 隐藏」切换 */
@@ -1861,7 +1842,7 @@ body {
 
 .settings-meta-version {
   color: var(--ink-3);
-  font-size: 12.5px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1928,7 +1909,7 @@ body {
 
 .update-title {
   color: var(--ink);
-  font-size: 14.5px;
+  font-size: 15px;
   font-weight: 600;
 }
 
@@ -2118,7 +2099,7 @@ body {
   background: var(--field);
   color: var(--ink-2);
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1;
   text-align: left;
   transition: border-color 0.15s ease, background 0.15s ease;
@@ -2188,6 +2169,7 @@ body {
 }
 
 .chip {
+  position: relative;
   padding: 7px 13px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -2195,6 +2177,14 @@ body {
   color: var(--ink-2);
   font-family: inherit;
   font-size: 13px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 胶囊视觉高度 32px，用伪元素把命中区补到 44px，避免为了手感把 chip 撑胖 */
+.chip::after {
+  content: '';
+  position: absolute;
+  inset: -7px -2px;
 }
 
 .chip.active {
@@ -2349,7 +2339,7 @@ body.modal-open #view-editor .vditor-sv {
   background: transparent;
   color: var(--ink-3);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   white-space: nowrap;
 }
 
@@ -2407,7 +2397,7 @@ body.modal-open #view-editor .vditor-sv {
   border-radius: calc(var(--radius) - 4px);
   background: var(--surface);
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.45;
 }
 
@@ -2443,10 +2433,17 @@ body.modal-open #view-editor .vditor-sv {
 
 .list-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   flex: none;
-  padding: 14px 16px 2px;
+  /* 列表页已去掉品牌顶栏，标题行自己承接刘海安全区 */
+  padding: calc(env(safe-area-inset-top) + 12px) 16px 2px;
+}
+
+.list-head-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
 }
 
 .list-title {
@@ -2458,15 +2455,16 @@ body.modal-open #view-editor .vditor-sv {
 }
 
 .list-count {
-  color: var(--ink-3);
+  color: var(--ink-2);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
 .list-group-title {
-  margin: 16px 2px 8px;
-  color: var(--ink-3);
-  font-size: 11.5px;
+  margin: 14px 0 4px;
+  /* 12px 小字在浅背景上需要 4.5:1，ink-3 只有约 4.2:1 */
+  color: var(--ink-2);
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.1em;
 }
@@ -2479,9 +2477,9 @@ body.modal-open #view-editor .vditor-sv {
 .post-item[class*='status-']::before {
   content: '';
   position: absolute;
-  top: 15px;
-  bottom: 15px;
-  left: 8px;
+  top: 13px;
+  bottom: 13px;
+  left: 0;
   width: 2px;
   border-radius: 999px;
   background: var(--line);
@@ -2554,7 +2552,7 @@ body.modal-open #view-editor .vditor-sv {
   background-repeat: no-repeat;
   color: var(--ink);
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   outline: none;
 }
 
@@ -2851,7 +2849,7 @@ body.modal-open #view-editor .vditor-sv {
   background: var(--bg);
   color: var(--ink-2);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.2;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
@@ -2895,7 +2893,7 @@ body.modal-open #view-editor .vditor-sv {
   background: var(--bg);
   color: var(--ink);
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
 }
@@ -2962,7 +2960,7 @@ body.modal-open #view-editor .vditor-sv {
   background: none;
   color: var(--ink);
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
   text-align: left;
 }
@@ -3014,7 +3012,7 @@ body.modal-open #view-editor .vditor-sv {
   align-items: flex-start;
   gap: 7px;
   padding: 5px 0;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.55;
   color: var(--ink-2);
 }
@@ -3160,7 +3158,7 @@ body.modal-open #view-editor .vditor-sv {
 }
 
 .snippet-name {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -3196,7 +3194,7 @@ body.modal-open #view-editor .vditor-sv {
 .snippet-empty {
   padding: 22px 0;
   text-align: center;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-3);
 }
 
@@ -3241,7 +3239,7 @@ body.modal-open #view-editor .vditor-sv {
   margin: 0;
   padding: 30px 0;
   color: var(--ink-3);
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: center;
 }
 
@@ -3268,7 +3266,7 @@ body.modal-open #view-editor .vditor-sv {
   border-radius: 999px;
   background: rgba(0, 0, 0, 0.28);
   color: #fff;
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 1;
 }
 
@@ -3424,7 +3422,7 @@ body.modal-open #view-editor .vditor-sv {
   gap: 5px;
   margin: 10px 2px 6px;
   color: var(--ink-3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .calendar-legend .dot {
@@ -3475,7 +3473,7 @@ body.modal-open #view-editor .vditor-sv {
   margin: 0;
   padding: 20px 0;
   color: var(--ink-3);
-  font-size: 12.5px;
+  font-size: 13px;
   text-align: center;
 }
 
@@ -3502,7 +3500,6 @@ body.modal-open #view-editor .vditor-sv {
 
 /* 深色下主色变亮，按钮/徽标上的白字改为深墨色，避免对比度不足 */
 :root[data-theme='dark'] .btn.primary,
-:root[data-theme='dark'] .brand-mark,
 :root[data-theme='dark'] .fab {
   color: #0f1f1a;
 }
@@ -3820,7 +3817,7 @@ body.modal-open #view-editor .vditor-sv {
   background: var(--bg);
   color: var(--ink-2);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -3838,7 +3835,7 @@ body.modal-open #view-editor .vditor-sv {
   background: none;
   color: var(--accent);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -3988,7 +3985,7 @@ body.modal-open #view-editor .vditor-sv {
   background: transparent;
   color: var(--ink-3);
   font-family: inherit;
-  font-size: 10.5px;
+  font-size: 11px;
   letter-spacing: 0.04em;
   transition: color 0.16s ease;
 }
@@ -4103,9 +4100,16 @@ body.has-tabbar .toast {
   flex: 0 0 auto;
   width: 48px;
   height: 48px;
+  /* 白底 + 主色描边：浅绿底上墨迹会糊成一个点 */
+  border: 1px solid var(--accent);
   border-radius: 50%;
-  background: var(--accent-soft);
+  background: var(--surface);
   color: var(--accent);
+}
+
+.me-avatar svg {
+  width: 26px;
+  height: 26px;
 }
 
 .me-info {
@@ -4121,7 +4125,7 @@ body.has-tabbar .toast {
 
 .me-server {
   margin: 3px 0 0;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-3);
   word-break: break-all;
 }
@@ -4300,28 +4304,49 @@ body.has-tabbar .toast {
   display: none;
 }
 
-.me-version {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin: 18px 0 0;
-  font-size: 12px;
-  color: var(--ink-3);
+/* 检查更新 / 关于 / 反馈：三行列表，填满「我的」页下半部分 */
+.me-links {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
-.me-version-btn {
-  padding: 0;
+.me-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
   border: none;
   background: transparent;
-  color: var(--ink-3);
+  color: var(--ink);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 15px;
+  text-align: left;
   -webkit-tap-highlight-color: transparent;
 }
 
-.me-version-btn:active {
-  color: var(--accent);
+.me-link + .me-link {
+  border-top: 1px solid var(--line);
+}
+
+.me-link:active {
+  background: var(--hover);
+}
+
+.me-link-value {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.me-link-arrow {
+  color: var(--ink-3);
+  font-size: 16px;
+  line-height: 1;
 }
 
 /* 宽屏（平板 / 横屏）下限制内容宽度，避免统计卡与宫格被拉得过宽 */
@@ -4352,7 +4377,7 @@ body.has-tabbar .toast {
 
 .detail-meta {
   margin: 0 0 18px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-3);
 }
 
@@ -4406,7 +4431,7 @@ body.has-tabbar .toast {
 .detail-comment-hint {
   margin: 14px 0;
   text-align: center;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-3);
 }
 
@@ -4427,7 +4452,7 @@ body.has-tabbar .toast {
 }
 
 .comment-author {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--ink);
 }
@@ -4553,7 +4578,7 @@ body.has-tabbar .toast {
   background: transparent;
   color: var(--ink-3);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .shuoshuo-comment:active {
@@ -4625,5 +4650,34 @@ body.has-tabbar .toast {
   .album-cover img {
     opacity: 1;
     transition: none;
+  }
+}
+
+/* ─── 宽屏（平板 / 横屏浏览器）：内容居中成手机宽度 ───────── */
+@media (min-width: 640px) {
+  #app {
+    max-width: 560px;
+    margin-inline: auto;
+  }
+
+  /* 固定层跟随 App 宽度，否则会贴着浏览器左右边缘 */
+  .tabbar {
+    left: calc(50% - 280px);
+    right: calc(50% - 280px);
+  }
+
+  .batch-bar {
+    left: calc(50% - 268px);
+    right: calc(50% - 268px);
+  }
+
+  /* 抽屉同样收进 App 宽度；这里不能改 transform，会和滑入动画冲突 */
+  .sheet {
+    left: calc(50% - 280px);
+    right: calc(50% - 280px);
+  }
+
+  .fab {
+    right: calc(50% - 260px);
   }
 }

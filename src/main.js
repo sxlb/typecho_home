@@ -70,6 +70,8 @@ const el = {
   meStats: $('#me-stats'),
   meDashboard: $('#me-dashboard'),
   meCheckUpdate: $('#me-check-update'),
+  meAbout: $('#me-about'),
+  meFeedback: $('#me-feedback'),
   tabBadge: $('#tab-badge-me'),
   listLoading: $('#list-loading'),
   listSkeleton: $('#list-skeleton'),
@@ -6029,6 +6031,8 @@ function bind() {
   });
 
   el.meCheckUpdate?.addEventListener('click', () => checkUpdate({ manual: true }));
+  el.meAbout?.addEventListener('click', () => openInBrowser('https://github.com/sxlb/typecho_home'));
+  el.meFeedback?.addEventListener('click', () => openInBrowser('https://github.com/sxlb/typecho_home/issues'));
 
   $('#me-settings').addEventListener('click', openSettings);
   $('#btn-shuoshuo-refresh').addEventListener('click', () => loadShuoshuo({ reset: true }));
